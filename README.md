@@ -20,16 +20,16 @@ Re‑run the script/command any time—it upgrades everything in place.
 
 ## Table of Contents
 
-1. [Quick Start](#quick-start)
-2. [Why This Exists](#why-this-exists)
-3. [Prerequisites & Supported Distros](#prerequisites--supported-distros)
-4. [Installation Methods](#installation-methods)
-5. [Flags & Environment Variables](#flags--environment-variables)
-6. [What the Script Actually Does](#what-the-script-actually-does)
-7. [MCP Stack Deep‑Dive](#mcp-stack-deep--dive)
-8. [Updating, Re‑running & Uninstalling](#updating-re-running--uninstalling)
+1. [Quick Start](#quick-start)
+2. [Why This Exists](#why-this-exists)
+3. [Prerequisites & Supported Distros](#prerequisites--supported-distros)
+4. [Installation Methods](#installation-methods)
+5. [Flags & Environment Variables](#flags--environment-variables)
+6. [What the Script Actually Does](#what-the-script-actually-does)
+7. [MCP Stack Deep Dive](#mcp-stack-deep-dive)
+8. [Updating, Re-running & Uninstalling](#updating-re-running--uninstalling)
 9. [Troubleshooting](#troubleshooting)
-10. [Credits & License](#credits--license)
+10. [Credits & License](#credits--license)
 
 ---
 
