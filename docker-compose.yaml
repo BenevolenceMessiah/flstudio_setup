@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  flstudio:
+    build:
+      context: .
+      args:
+        WINE_BRANCH: staging          # or stable
+    # GPU pass-through (ignored on AMD/Intel hosts)
+    runtime: nvidia                   # requires nvidia-container-toolkit
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=${XAUTHORITY:-$HOME/.Xauthority}
+      - WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-}
+      - XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}
+      - PULSE_SERVER=unix:/run/user/1000/pulse/native
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3:14b}
+      - WINEDEBUG=-all
+    volumes:
+      # X11 socket
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      # Wayland socket — uncomment if you run Wayland natively
+      # - ${XDG_RUNTIME_DIR}/${WAYLAND_DISPLAY:-wayland-0}:/run/user/1000/${WAYLAND_DISPLAY:-wayland-0}:ro
+
+      # Xauthority cookie
+      - ${XAUTHORITY}:${XAUTHORITY}:ro
+
+      # Pulse / PipeWire / JACK sockets
+      - /run/user/${UID:-1000}/pulse:/run/user/1000/pulse
+      - /run/user/${UID:-1000}/pipewire-0:/run/user/1000/pipewire-0
+      - /run/user/${UID:-1000}/jack:/run/user/1000/jack
+
+      # Sound and GPU devices
+      - /dev/snd:/dev/snd
+      - /dev/dri:/dev/dri
+
+      # Persist your FL-Studio Wine prefix
+      - wineprefix:/home/fluser/.wine-flstudio
+
+      # Optional project folders (edit to taste)
+      - ~/Downloads:/home/fluser/Downloads
+      - ~/Projects:/home/fluser/Projects
+
+    devices:
+      - /dev/snd
+      - /dev/dri
+
+    ipc: host                         # shared mem for JACK/DXVK
+    tty: true
+
+    # Real-time audio / memlock limits inside the container
+    ulimits:
+      rtprio: 99
+      memlock: -1
+
+volumes:
+  wineprefix:

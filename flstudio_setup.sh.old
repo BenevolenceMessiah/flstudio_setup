@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+# flstudio_setup.sh – FL Studio + Wine/yabridge + MCP + LoopMIDI replacement bridge
+# Flags:
+#   --installer <file|URL>   Path or URL to FL-Studio installer
+#   --no-mcp                 Skip flstudio-mcp server + assistants
+#   --no-continue            Skip Continue assistant YAML
+#   --no-loopmidi            Skip a2jmidid bridge
+#   --n8n / --ollama / --cursor   Enable extra MCP endpoints
+#   --systemd                Install user-level services (autostart)
+
+set -Eeuo pipefail
+
+################ 1 – Defaults & flag parser ###############################
+: "${INSTALLER_PATH:=https://cdn.image-line.com/flstudio/flstudio_win_latest.exe}"
+PREFIX="${PREFIX:-$HOME/.wine-flstudio}"; ARCH="win64"
+INSTALLER_PATH="${INSTALLER_PATH:-}"
+ENABLE_MCP="${ENABLE_MCP:-1}"
+ENABLE_CONTINUE="${ENABLE_CONTINUE:-1}"
+ENABLE_LOOPMIDI="${ENABLE_LOOPMIDI:-1}"
+ENABLE_N8N="${ENABLE_N8N:-0}"; ENABLE_OLLAMA="${ENABLE_OLLAMA:-0}"
+ENABLE_CURSOR="${ENABLE_CURSOR:-0}"; ENABLE_SYSTEMD="${ENABLE_SYSTEMD:-0}"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --installer) INSTALLER_PATH="$2"; shift 2 ;;
+    --no-mcp)       ENABLE_MCP=0; shift ;;
+    --no-continue)  ENABLE_CONTINUE=0; shift ;;
+    --no-loopmidi)  ENABLE_LOOPMIDI=0; shift ;;
+    --n8n)      ENABLE_N8N=1; shift ;;
+    --ollama)   ENABLE_OLLAMA=1; shift ;;
+    --cursor)   ENABLE_CURSOR=1; shift ;;
+    --systemd)  ENABLE_SYSTEMD=1; shift ;;
+    *) echo "Unknown flag $1"; exit 1 ;;
+  esac
+done
+
+log(){ printf '\e[1;34m[INFO]\e[0m  %s\n' "$*"; }
+die(){ printf '\e[1;31m[FAIL]\e[0m  %s\n' "$*"; exit 1; }
+as_user(){ sudo -u "${SUDO_USER:-$USER}" "$@"; }
+
+LOG="$HOME/flstudio_install.log"
+exec > >(tee -a "$LOG") 2>&1
+
+################ 2 – System update & core packages #######################
+log "Updating base system…"
+sudo apt update && sudo apt upgrade -y   # full upgrade pass
+
+log "Configuring Wine repo…"                                   # :contentReference[oaicite:0]{index=0}
+sudo dpkg --add-architecture i386 || true
+codename=$(lsb_release -cs)
+sudo mkdir -pm755 /etc/apt/keyrings
+[[ -f /etc/apt/keyrings/winehq-archive.key ]] ||
+  sudo wget -qO /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key
+[[ -f /etc/apt/sources.list.d/winehq-$codename.sources ]] ||
+  sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/$codename/winehq-$codename.sources
+
+log "Installing / upgrading core packages…"
+PKG_COMMON="winehq-staging wine64 wine32 winetricks wineasio qjackctl pipewire-jack \
+            libpipewire-0.3-modules imagemagick curl git python3-venv jq"
+[[ $ENABLE_LOOPMIDI == 1 ]] && PKG_COMMON+=" a2jmidid"                       # 
+sudo apt -qq update && sudo apt -y install --install-recommends $PKG_COMMON
+
+################ 3 – Wine prefix & FL-Studio #############################
+export WINEPREFIX="$PREFIX" WINEARCH="$ARCH"
+[[ -d $PREFIX ]] || { log "Creating Wine prefix"; as_user wineboot -u; }
+log "Adding Winetricks components…"                                         # :contentReference[oaicite:2]{index=2}
+as_user winetricks -q vcrun2019 corefonts fontsmooth=rgb dxvk || true
+as_user regsvr32 wineasio.dll || true
+
+# Acquire installer
+if [[ -n $INSTALLER_PATH ]]; then
+  [[ $INSTALLER_PATH =~ ^https?:// ]] && wget -c "$INSTALLER_PATH" -O flstudio.exe && INSTALLER_PATH=flstudio.exe
+elif ! INSTALLER_PATH=$(ls flstudio_win_*.exe 2>/dev/null | head -1); then
+  die "No FL-Studio installer given. Use --installer or INSTALLER_PATH="
+fi
+[[ -f $INSTALLER_PATH ]] || die "Installer not found: $INSTALLER_PATH"
+log "Running FL-Studio installer…"; as_user wine "$INSTALLER_PATH"
+
+FLDIR=$(find "$PREFIX/drive_c/Program Files/Image-Line" -maxdepth 1 -type d -name "FL Studio*" | head -1)
+ICON_SRC="$FLDIR/Artwork/Icon/FL.ico"; ICON_DST="$HOME/.local/share/icons/hicolor/512x512/apps/flstudio.png"
+[[ -f $ICON_SRC ]] && { mkdir -p "$(dirname "$ICON_DST")"; convert "$ICON_SRC"[0] "$ICON_DST"; }
+mkdir -p ~/.local/share/applications
+cat > ~/.local/share/applications/flstudio.desktop <<EOF
+[Desktop Entry]
+Name=FL Studio 64-bit
+Exec=env WINEPREFIX=$PREFIX wine "$FLDIR/FL64.exe"
+Icon=$ICON_DST
+Type=Application
+Categories=AudioVideo;Audio;Music;
+EOF
+update-desktop-database ~/.local/share/applications
+
+################ 4 – Yabridge (VST bridge) ################################
+YABIN=~/.local/bin/yabridge
+DL=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest | \
+     jq -r '.assets[]|select(.name|test("x86_64-linux")).browser_download_url')     # :contentReference[oaicite:3]{index=3}
+TMP=$(mktemp -d); wget -qO "$TMP/yab.tgz" "$DL"; tar -xf "$TMP/yab.tgz" -C "$TMP"
+install -Dm755 "$TMP/yabridge"* ~/.local/bin/ && rm -rf "$TMP"
+as_user yabridgectl sync                                                        # :contentReference[oaicite:4]{index=4}
+
+################ 5 – LoopMIDI-style bridge (a2jmidid) #####################
+if [[ $ENABLE_LOOPMIDI == 1 ]]; then
+  log "LoopMIDI bridge installed (a2jmidid -e)"                                # 
+fi
+
+################ 6 – MCP stack (optional) ##################################
+if [[ $ENABLE_MCP == 1 ]]; then
+  ## 6.1  flstudio-mcp server
+  MCP_DIR="$HOME/.local/share/flstudio-mcp"; MCP_VENV="$MCP_DIR/venv"
+  [[ -d $MCP_DIR ]] && git -C "$MCP_DIR" pull --ff-only || \
+    git clone --depth 1 https://github.com/BenevolenceMessiah/flstudio-mcp.git "$MCP_DIR"  # :contentReference[oaicite:6]{index=6}
+  python3 -m venv "$MCP_VENV"
+  "$MCP_VENV/bin/pip" install -U pip && \
+  "$MCP_VENV/bin/pip" install -r "$MCP_DIR/requirements.txt"
+  cp -r "$MCP_DIR/Test Controller" "$FLDIR/Settings/Hardware/"
+
+  ## 6.2  n8n endpoint
+  if [[ $ENABLE_N8N == 1 ]]; then
+    if command -v n8n &>/dev/null; then
+      sudo npm i -g n8n@latest                                                # update path :contentReference[oaicite:7]{index=7}
+    else
+      curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
+      sudo apt -y install nodejs && sudo npm i -g n8n
+    fi
+    sudo npm i -g n8n-nodes-mcp-client                                        # :contentReference[oaicite:8]{index=8}
+  fi
+
+  ## 6.3  Ollama shim
+  if [[ $ENABLE_OLLAMA == 1 ]]; then
+    if command -v ollama &>/dev/null; then sudo ollama update || true;        # update helper :contentReference[oaicite:9]{index=9}
+    else curl -fsSL https://ollama.com/install.sh | sh; fi
+    OLLAMA_SHIM="$HOME/.local/bin/ollama-mcp"
+    cat > "$OLLAMA_SHIM" <<'PY'
+#!/usr/bin/env python3
+import sys, json, subprocess, uuid
+def send(i, **k): print(json.dumps({"id": i, **k})); sys.stdout.flush()
+for ln in sys.stdin:
+    req=json.loads(ln); _id=req.get("id", str(uuid.uuid4()))
+    if req["method"]=="getTools": send(_id, tools=[]); continue
+    if req["method"]=="ask":
+        prompt=req["params"]["prompt"]
+        out=subprocess.check_output(["ollama","run","qwen3:14b",prompt]).decode()  # default model :contentReference[oaicite:10]{index=10}
+        send(_id, result=out)
+PY
+    chmod +x "$OLLAMA_SHIM"
+  fi
+
+  ## 6.4  Cursor YAML
+  if [[ $ENABLE_CURSOR == 1 ]]; then
+    CFG="$HOME/.cursor/flstudio-mcp.yaml"; mkdir -p "$(dirname "$CFG")"
+    cat > "$CFG" <<YAML
+mcpServers:
+  - name: flstudio
+    transport: { type: stdio, command: "$MCP_VENV/bin/python",
+                 args: ["$MCP_DIR/trigger.py"] }
+YAML
+  fi
+
+  ## 6.5  Continue assistant YAML
+  if [[ $ENABLE_CONTINUE == 1 ]]; then
+    ASSIST=~/.continue/assistants; mkdir -p "$ASSIST"
+    cat > "$ASSIST/flstudio-mcp.yaml" <<YAML
+name: flstudio-mcp
+schema: v1
+mcpServers:
+  - name: flstudio
+    transport: { type: stdio, command: "$MCP_VENV/bin/python",
+                 args: ["$MCP_DIR/trigger.py"] }
+YAML
+    if [[ $ENABLE_OLLAMA == 1 ]]; then
+      cat > "$ASSIST/ollama-mcp.yaml" <<YAML
+name: ollama-mcp
+schema: v1
+mcpServers:
+  - name: ollama
+    transport: { type: stdio, command: "$HOME/.local/bin/ollama-mcp" }
+YAML
+    fi
+  fi
+fi  # end ENABLE_MCP
+
+################ 7 – Optional user systemd services #######################
+if [[ $ENABLE_SYSTEMD == 1 ]]; then
+  mkdir -p ~/.config/systemd/user
+  [[ $ENABLE_MCP == 1 ]] && cat > ~/.config/systemd/user/flstudio-mcp.service <<EOF
+[Unit]
+Description=FL-Studio MCP server
+After=network.target
+
+[Service]
+ExecStart=$MCP_VENV/bin/python $MCP_DIR/trigger.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+EOF
+  [[ $ENABLE_MCP == 1 ]] && systemctl --user enable --now flstudio-mcp.service
+
+  if [[ $ENABLE_LOOPMIDI == 1 ]]; then   # 
+    cat > ~/.config/systemd/user/a2jmidid.service <<EOF
+[Unit]          Description=ALSA↔JACK MIDI bridge (a2jmidid)
+[Service]       ExecStart=/usr/bin/a2jmidid -e
+[Install]       WantedBy=default.target
+EOF
+    systemctl --user enable --now a2jmidid.service
+  fi
+  if [[ $ENABLE_N8N == 1 ]]; then
+    cat > ~/.config/systemd/user/n8n.service <<EOF
+[Unit]          Description=n8n Automation
+[Service]       ExecStart=$(command -v n8n) start
+Environment=PORT=5678
+[Install]       WantedBy=default.target
+EOF
+    systemctl --user enable --now n8n.service
+  fi
+  if [[ $ENABLE_OLLAMA == 1 ]]; then
+    cat > ~/.config/systemd/user/ollama.service <<EOF
+[Unit]          Description=Ollama server
+[Service]       ExecStart=$(command -v ollama) serve
+[Install]       WantedBy=default.target
+EOF
+    systemctl --user enable --now ollama.service
+  fi
+fi
+
+################ 8 – Finish ###############################################
+log "✔ Setup complete.  Launch FL-Studio, choose WineASIO & route MIDI via a2jmidid."
+[[ $ENABLE_CONTINUE == 1 ]] && echo "→ Continue assistants written to ~/.continue/assistants/"
+[[ $ENABLE_N8N == 1 ]] && echo "→ n8n MCP endpoint at http://localhost:5678"
+[[ $ENABLE_OLLAMA == 1 ]] && echo "→ Ollama shim uses default model “qwen3:14b”; change in $HOME/.local/bin/ollama-mcp"
+echo "Rerun this script anytime—it will update in place."
