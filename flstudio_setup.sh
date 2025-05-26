@@ -62,9 +62,21 @@ esac; done
 ########## 2 – Optional uninstall #########################################
 if [[ $DO_UNINSTALL == 1 ]]; then
   log "Uninstalling packages and data…"
+
+  # 1) Remove the MCP stack first
+  MCP_USE_VENV=0 curl -fsSL \
+    https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh \
+    | bash --uninstall
+
+  # 2) Remove Wine/FL Studio & helper packages as before
   sudo apt -y remove winehq-* wineasio a2jmidid n8n nodejs || true
-  rm -rf "$PREFIX" ~/.local/{bin,share}/flstudio-* ~/.continue/assistants/{flstudio*,ollama-mcp.yaml}
+  rm -rf "$PREFIX" \
+         ~/.local/{bin,share}/flstudio-* \
+         ~/.continue/assistants/{flstudio*,ollama-mcp.yaml}
+
+  # 3) Disable any lingering user units
   systemctl --user disable --now {flstudio-mcp,a2jmidid,n8n,ollama}.service 2>/dev/null || true
+
   log "Done. Some packages may remain if they were previously installed."
   exit 0
 fi
@@ -156,13 +168,27 @@ fi
 [[ $ENABLE_LOOPMIDI == 1 ]] && log "a2jmidid bridge active (-e export HW)"   # :contentReference[oaicite:14]{index=14}
 
 ########## 10 – MCP stack ###################################################
-if [[ $ENABLE_MCP == 1 ]]; then
-  MCP_DIR=~/.local/share/flstudio-mcp; MCP_VENV=$MCP_DIR/venv
-  git -C "$MCP_DIR" pull --ff-only 2>/dev/null || \
-  git clone --depth 1 https://github.com/BenevolenceMessiah/flstudio-mcp.git "$MCP_DIR"
-  python3 -m venv "$MCP_VENV" && "$MCP_VENV/bin/pip" install -U pip \
-        && "$MCP_VENV/bin/pip" install -r "$MCP_DIR/requirements.txt"
-  cp -r "$MCP_DIR/Test Controller" "$FLDIR/Settings/Hardware/"
+# Installs or updates the entire FL-Studio MCP tool-chain in one step by
+# delegating to the official installer script maintained in the flstudio-mcp
+# fork repository (https://github.com/BenevolenceMessiah/flstudio-mcp)
+# using a single, version-pinned curl|bash keeps this setup
+# script future-proof: when the MCP project adds new Python packages,
+# model files, or controller scripts, only the remote installer needs to
+# change—this wrapper never does.
+
+if [[ $ENABLE_MCP -eq 1 ]]; then
+  MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh"
+  TMP_MCP_SCRIPT="$(mktemp)"
+
+  echo "› Downloading MCP installer…"
+  curl -fsSL "$MCP_INSTALL_URL" -o "$TMP_MCP_SCRIPT"
+
+  echo "› Running MCP installer…"
+  chmod +x "$TMP_MCP_SCRIPT"
+  bash "$TMP_MCP_SCRIPT"
+
+  echo "› Cleaning up…"
+  rm -f "$TMP_MCP_SCRIPT"
 fi
 
 ### n8n

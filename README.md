@@ -26,7 +26,7 @@ Re‑run the script/command any time—it upgrades everything in place.
 4. [Installation Methods](#installation-methods)
 5. [Flags & Environment Variables](#flags--environment-variables)
 6. [What the Script Actually Does](#what-the-script-actually-does)
-7. [MCP Stack Deep Dive](#mcp-stack-deep-dive)
+7. [MCP Stack Deep-Dive](#mcp-stack-deep-dive)
 8. [Updating, Re-running & Uninstalling](#updating-re-running--uninstalling)
 9. [Troubleshooting](#troubleshooting)
 10. [Credits & License](#credits--license)
@@ -63,7 +63,7 @@ curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/m
   --systemd
 ```
 
-### **Notes:**
+### **Notes 1:**
 
 1. *The first run takes \~5–10 minutes depending on bandwidth and what you chose to install; subsequent runs only fetch updates.*
 2. *If you're using a pre-downloaded EXE file for FL STUDIO, make sure you edit the file location via --installer when you paste the command.*
@@ -82,7 +82,7 @@ This script wires everything necessary together *idempotently*: every section ch
 * DXVK + `vcrun2019` via Winetricks solve most modern graphics/runtime issues.
 * **Yabridge** translates Windows plugins to native hosts and auto‑re‑syncs after a Wine update.
 * **a2jmidid -e** is the de‑facto “LoopMIDI” for JACK/PipeWire.
-* **Model Context Protocol (MCP)** turns FL Studio into an AI‑controllable endpoint—the “USB‑C of AI apps.”
+* **Model Context Protocol (MCP)** turns FL Studio into an AI‑controllable endpoint—the “USB‑C of AI apps.” To this end, since FL Studio doesn't have an official Linux install, and since this project is presumably the most comprehensive attempt at perpetuating a long term future-proof solution, it ships out of the box with AI capabilities.
 
 ---
 
@@ -169,7 +169,7 @@ docker compose run --rm flstudio
 | `--disable-fl-updates` / `DISABLE_FL_UPDATES=1` | 0 | Turn off FL-Studio auto-update dialog. :contentReference[oaicite:10]{index=10} |
 | `--uninstall`                          | —  | Remove all packages, Wine prefix, user services, icons, assistants. |
 
-### **Notes:**
+### **Notes 2:**
 
 * If --installer is not set, the script will automatically download the latest version of FL Studio via CDN, effectively: --installer <https://cdn.image-line.com/flstudio/flstudio_win_latest.exe>
 * Environment variables override script defaults; flags override both.
@@ -247,13 +247,64 @@ Placed in `~/.config/systemd/user/` and started immediately:
 
 Model Context Protocol is an open, JSON‑RPC‑style protocol that lets LLM apps *safely* call external tools. It has been likened to “USB‑C for AI” and is now shipping in Windows AI Foundry.
 
-### flstudio-mcp
+### flstudio-mcp – autonomous AI bridge for FL Studio
 
-Bridges FL Studio’s scripting API + MIDI feedback so AI agents (Continue, Cursor, n8n) can:
+The *flstudio-mcp* stack wires an LLM-aware **Model Context Protocol (MCP)**
+server (built with **FastMCP 2.x**) to FL Studio’s Python/MIDI scripting layer.
+It now ships a complete tool-chain—composition → arrangement → mix → master—
+that installs with a single script and runs automatically as a user-level
+systemd service.
 
-* Jump to markers, solo tracks, set mixer levels
-* Query project tempo, playlist items
-* Trigger render or export commands
+#### Core bridge
+
+* Communicates over a **dedicated MIDI channel** and an extended op-code
+  scheme to set tempo, jump to markers, solo/unsolo tracks, tweak mixer faders
+  and trigger full renders, all exposed through FL Studio’s official Python
+  MIDI-scripting API :contentReference[oaicite:0]{index=0}.
+* Uses **FastMCP** so any local or cloud LLM (Continue, Cursor, n8n, Ollama)
+  can discover tools like `generate_melody`, `mix_project` or `master_audio`
+  via standard JSON-RPC :contentReference[oaicite:1]{index=1}.
+
+#### Generative composition
+
+* Wraps Magenta’s **MelodyRNN** (`basic_rnn.mag`) and **DrumRNN**
+  (`drum_kit_rnn.mag`) checkpoints to create multi-bar melodies and drum
+  grooves on demand, returned as compact note strings the script streams into
+  FL’s piano-roll :contentReference[oaicite:2]{index=2}.
+* Leverages Magenta’s `note_seq` utilities for fast NoteSequence decoding and
+  timing accuracy :contentReference[oaicite:3]{index=3}.
+
+#### Mixing & mastering
+
+* Adds an RMS analyser that balances stems to -12 dB LUFS before mastering.
+* Integrates **Matchering 2.0** for reference-based, fully offline mastering;
+  FFmpeg is auto-installed for codec support :contentReference[oaicite:4]{index=4}.
+
+#### Linux-first audio stack
+
+* The installer fetches **ffmpeg**, **Wine HQ** (stable|staging), **Winetricks**
+  and **Yabridge** so Windows VST2/3 plug-ins run natively on Linux :contentReference[oaicite:5]{index=5}.
+* Creates or updates a Wine prefix, applies DXVK, and syncs VST bridges in one
+  step.
+
+#### Package & environment management
+
+* Installs all Python wheels with either
+  **uv** (light-speed Rust package manager) or plain pip, falling back
+  automatically :contentReference[oaicite:6]{index=6}.
+* Optional virtual-env (`MCP_USE_VENV=1`, default) keeps dependencies isolated;
+  containers set `MCP_USE_VENV=0` for lean layers.
+
+#### Auto-start & lifecycle
+
+* Generates a user-mode `flstudio-mcp.service` that launches the MCP server at
+  login; updates or **`--uninstall`** cleanly stop and remove the unit
+  :contentReference[oaicite:7]{index=7}.
+* The same install script supports `--uninstall` to delete the venv, model
+  bundles, wheels and service, keeping hosts tidy.
+
+With these additions, an LLM can **compose, arrange, mix, master and export a
+finished WAV** inside FL Studio—all headless, hands-free and cross-platform.
 
 ### Ollama shim
 
