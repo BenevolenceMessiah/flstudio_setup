@@ -45,7 +45,7 @@ exec > >(tee -a "$LOG") 2>&1
 log "Updating base system…"
 sudo apt update && sudo apt upgrade -y   # full upgrade pass
 
-log "Configuring Wine repo…"                                   # :contentReference[oaicite:0]{index=0}
+log "Configuring Wine repo…"
 sudo dpkg --add-architecture i386 || true
 codename=$(lsb_release -cs)
 sudo mkdir -pm755 /etc/apt/keyrings
@@ -63,7 +63,7 @@ sudo apt -qq update && sudo apt -y install --install-recommends $PKG_COMMON
 ################ 3 – Wine prefix & FL-Studio #############################
 export WINEPREFIX="$PREFIX" WINEARCH="$ARCH"
 [[ -d $PREFIX ]] || { log "Creating Wine prefix"; as_user wineboot -u; }
-log "Adding Winetricks components…"                                         # :contentReference[oaicite:2]{index=2}
+log "Adding Winetricks components…"
 as_user winetricks -q vcrun2019 corefonts fontsmooth=rgb dxvk || true
 as_user regsvr32 wineasio.dll || true
 
@@ -93,10 +93,10 @@ update-desktop-database ~/.local/share/applications
 ################ 4 – Yabridge (VST bridge) ################################
 YABIN=~/.local/bin/yabridge
 DL=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest | \
-     jq -r '.assets[]|select(.name|test("x86_64-linux")).browser_download_url')     # :contentReference[oaicite:3]{index=3}
+     jq -r '.assets[]|select(.name|test("x86_64-linux")).browser_download_url') 
 TMP=$(mktemp -d); wget -qO "$TMP/yab.tgz" "$DL"; tar -xf "$TMP/yab.tgz" -C "$TMP"
 install -Dm755 "$TMP/yabridge"* ~/.local/bin/ && rm -rf "$TMP"
-as_user yabridgectl sync                                                        # :contentReference[oaicite:4]{index=4}
+as_user yabridgectl sync  
 
 ################ 5 – LoopMIDI-style bridge (a2jmidid) #####################
 if [[ $ENABLE_LOOPMIDI == 1 ]]; then
@@ -108,7 +108,7 @@ if [[ $ENABLE_MCP == 1 ]]; then
   ## 6.1  flstudio-mcp server
   MCP_DIR="$HOME/.local/share/flstudio-mcp"; MCP_VENV="$MCP_DIR/venv"
   [[ -d $MCP_DIR ]] && git -C "$MCP_DIR" pull --ff-only || \
-    git clone --depth 1 https://github.com/BenevolenceMessiah/flstudio-mcp.git "$MCP_DIR"  # :contentReference[oaicite:6]{index=6}
+    git clone --depth 1 https://github.com/BenevolenceMessiah/flstudio-mcp.git "$MCP_DIR"
   python3 -m venv "$MCP_VENV"
   "$MCP_VENV/bin/pip" install -U pip && \
   "$MCP_VENV/bin/pip" install -r "$MCP_DIR/requirements.txt"
@@ -117,17 +117,17 @@ if [[ $ENABLE_MCP == 1 ]]; then
   ## 6.2  n8n endpoint
   if [[ $ENABLE_N8N == 1 ]]; then
     if command -v n8n &>/dev/null; then
-      sudo npm i -g n8n@latest                                                # update path :contentReference[oaicite:7]{index=7}
+      sudo npm i -g n8n@latest
     else
       curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && \
       sudo apt -y install nodejs && sudo npm i -g n8n
     fi
-    sudo npm i -g n8n-nodes-mcp-client                                        # :contentReference[oaicite:8]{index=8}
+    sudo npm i -g n8n-nodes-mcp-client
   fi
 
   ## 6.3  Ollama shim
   if [[ $ENABLE_OLLAMA == 1 ]]; then
-    if command -v ollama &>/dev/null; then sudo ollama update || true;        # update helper :contentReference[oaicite:9]{index=9}
+    if command -v ollama &>/dev/null; then sudo ollama update || true;
     else curl -fsSL https://ollama.com/install.sh | sh; fi
     OLLAMA_SHIM="$HOME/.local/bin/ollama-mcp"
     cat > "$OLLAMA_SHIM" <<'PY'
@@ -139,7 +139,7 @@ for ln in sys.stdin:
     if req["method"]=="getTools": send(_id, tools=[]); continue
     if req["method"]=="ask":
         prompt=req["params"]["prompt"]
-        out=subprocess.check_output(["ollama","run","qwen3:14b",prompt]).decode()  # default model :contentReference[oaicite:10]{index=10}
+        out=subprocess.check_output(["ollama","run","qwen3:14b",prompt]).decode()
         send(_id, result=out)
 PY
     chmod +x "$OLLAMA_SHIM"

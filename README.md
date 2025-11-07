@@ -164,9 +164,9 @@ docker compose run --rm flstudio
 | `--wine <stable\|staging>` / `WINE_BRANCH=` | `staging` | Choose Wine branch. |
 | `--ollama-model <tag>` / `OLLAMA_MODEL=` | `qwen3:14b` | Default model for the Ollama MCP shim. |
 | `--no-yabridge` / `ENABLE_YABRIDGE=0` | 1 | Skip Yabridge install/sync. |
-| `--tweak-pipewire` / `TWEAK_PIPEWIRE=1` | 0 | Apply low-latency PipeWire preset. :contentReference[oaicite:8]{index=8} |
-| `--patchbay` / `PATCHBAY=1` | 0 | Write QJackCtl/Carla patchbay template. :contentReference[oaicite:9]{index=9} |
-| `--disable-fl-updates` / `DISABLE_FL_UPDATES=1` | 0 | Turn off FL-Studio auto-update dialog. :contentReference[oaicite:10]{index=10} |
+| `--tweak-pipewire` / `TWEAK_PIPEWIRE=1` | 0 | Apply low-latency PipeWire preset. |
+| `--patchbay` / `PATCHBAY=1` | 0 | Write QJackCtl/Carla patchbay template.  |
+| `--disable-fl-updates` / `DISABLE_FL_UPDATES=1` | 0 | Turn off FL-Studio auto-update dialog. |
 | `--uninstall`                          | —  | Remove all packages, Wine prefix, user services, icons, assistants. |
 
 ### **Notes 2:**
@@ -260,30 +260,30 @@ systemd service.
 * Communicates over a **dedicated MIDI channel** and an extended op-code
   scheme to set tempo, jump to markers, solo/unsolo tracks, tweak mixer faders
   and trigger full renders, all exposed through FL Studio’s official Python
-  MIDI-scripting API :contentReference[oaicite:0]{index=0}.
+  MIDI-scripting API.
 * Uses **FastMCP** so any local or cloud LLM (Continue, Cursor, n8n, Ollama)
   can discover tools like `generate_melody`, `mix_project` or `master_audio`
-  via standard JSON-RPC :contentReference[oaicite:1]{index=1}.
+  via standard JSON-RPC.
 
 #### Generative composition
 
 * Wraps Magenta’s **MelodyRNN** (`basic_rnn.mag`) and **DrumRNN**
   (`drum_kit_rnn.mag`) checkpoints to create multi-bar melodies and drum
   grooves on demand, returned as compact note strings the script streams into
-  FL’s piano-roll :contentReference[oaicite:2]{index=2}.
+  FL’s piano-roll.
 * Leverages Magenta’s `note_seq` utilities for fast NoteSequence decoding and
-  timing accuracy :contentReference[oaicite:3]{index=3}.
+  timing accuracy.
 
 #### Mixing & mastering
 
 * Adds an RMS analyser that balances stems to -12 dB LUFS before mastering.
 * Integrates **Matchering 2.0** for reference-based, fully offline mastering;
-  FFmpeg is auto-installed for codec support :contentReference[oaicite:4]{index=4}.
+  FFmpeg is auto-installed for codec support.
 
 #### Linux-first audio stack
 
 * The installer fetches **ffmpeg**, **Wine HQ** (stable|staging), **Winetricks**
-  and **Yabridge** so Windows VST2/3 plug-ins run natively on Linux :contentReference[oaicite:5]{index=5}.
+  and **Yabridge** so Windows VST2/3 plug-ins run natively on Linux.
 * Creates or updates a Wine prefix, applies DXVK, and syncs VST bridges in one
   step.
 
@@ -291,15 +291,14 @@ systemd service.
 
 * Installs all Python wheels with either
   **uv** (light-speed Rust package manager) or plain pip, falling back
-  automatically :contentReference[oaicite:6]{index=6}.
+  automatically.
 * Optional virtual-env (`MCP_USE_VENV=1`, default) keeps dependencies isolated;
   containers set `MCP_USE_VENV=0` for lean layers.
 
 #### Auto-start & lifecycle
 
 * Generates a user-mode `flstudio-mcp.service` that launches the MCP server at
-  login; updates or **`--uninstall`** cleanly stop and remove the unit
-  :contentReference[oaicite:7]{index=7}.
+  login; updates or **`--uninstall`** cleanly stop and remove the unit.
 * The same install script supports `--uninstall` to delete the venv, model
   bundles, wheels and service, keeping hosts tidy.
 
