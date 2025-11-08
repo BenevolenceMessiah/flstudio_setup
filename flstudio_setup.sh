@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – FL Studio + Wine + AI tool-chain
-# FIXED VERSION - Addresses DNS failures, SHA256 mismatches, and hanging processes
 
 set -Eeuo pipefail
 
@@ -28,8 +27,10 @@ die() {
 LOG="$HOME/flstudio_setup_$(date +%F_%H-%M-%S).log"
 export DEBIAN_FRONTEND=noninteractive
 
-# FIX: Remove trailing space and update to working URL
-: "${INSTALLER_PATH:=https://www.image-line.com/download/fl-studio-installer.exe}"
+# FIX: Remove trailing space and use working URL format
+# The download page can be parsed, but for reliability, we'll use the known pattern
+FL_STUDIO_LATEST_VERSION="25.1.6.4997"
+: "${INSTALLER_PATH:=https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe}"
 : "${WINE_BRANCH:=staging}"
 : "${OLLAMA_MODEL:=qwen3:14b}"
 
@@ -50,15 +51,21 @@ TWEAK_PIPEWIRE=0
 DISABLE_FL_UPDATES=0
 PATCHBAY=0
 DO_UNINSTALL=0
+MINIMAL_MODE=0  # NEW: Minimal installation mode
 
 # FIX: Add timeout for network and Wine operations
 export CURL_TIMEOUT=60
 export WINE_TIMEOUT=30
 
+# FIX: Prevent Wine preloader crashes with PipeWire
+export WINE_DISABLE_MEMORY_MANAGER=1
+export WINE_LARGE_ADDRESS_AWARE=1
+
 # WARNING: WineASIO compatibility with PipeWire
 if [[ "$TWEAK_PIPEWIRE" == "1" ]]; then
     warn "PipeWire detected! WineASIO may not work with PipeWire's JACK implementation."
     warn "Consider using JACK2 instead of PipeWire for professional audio work."
+    warn "To use JACK2: sudo apt install jackd2 qjackctl"
 fi
 
 # Show help
@@ -77,6 +84,8 @@ OPTIONS:
   --no-continue             Skip Continue.ai assistant files
   --no-loopmidi            Skip a2jmidid bridge installation
   --no-yabridge            Skip Yabridge installation
+  --no-features            MINIMAL MODE: Only FL Studio + WineASIO
+  --reg <file>             Manually add registry key (e.g., FLRegkey.reg)
   --n8n                    Install n8n workflow engine
   --ollama                 Install Ollama
   --cursor                 Add Cursor MCP integration
@@ -92,14 +101,25 @@ ENVIRONMENT VARIABLES:
   WINE_BRANCH              Override Wine branch
   OLLAMA_MODEL             Override Ollama model
 
-WARNING: Ubuntu 24.04 uses PipeWire by default, which has known compatibility
-         issues with WineASIO. For best results, use JACK2 instead of PipeWire.
+EXAMPLES:
+  # Minimal installation (just FL Studio + WineASIO)
+  ./flstudio_setup.sh --no-features
+  
+  # Install with offline registry key
+  ./flstudio_setup.sh --reg ~/Downloads/FLRegkey.reg
+
+WARNING: Ubuntu 24.04+ uses PipeWire by default, which has known compatibility
+         issues with WineASIO. For best results:
+         1. Use JACK2: sudo apt install jackd2
+         2. Or run with --tweak-pipewire (experimental)
 
 EOF
     exit 0
 }
 
 ########## 1 – Flag parser ###############################################
+# FIX: Added --no-features and --reg flags
+MANUAL_REG_KEY=""
 while [[ $# -gt 0 ]]; do
     case $1 in
         --installer)
@@ -129,6 +149,26 @@ while [[ $# -gt 0 ]]; do
         --no-yabridge)
             ENABLE_YABRIDGE=0
             shift
+            ;;
+        --no-features)
+            MINIMAL_MODE=1
+            # Disable all optional features
+            ENABLE_MCP=0
+            ENABLE_CONTINUE=0
+            ENABLE_LOOPMIDI=0
+            ENABLE_YABRIDGE=0
+            ENABLE_N8N=0
+            ENABLE_OLLAMA=0
+            ENABLE_CURSOR=0
+            ENABLE_SYSTEMD=0
+            TWEAK_PIPEWIRE=0
+            DISABLE_FL_UPDATES=0
+            PATCHBAY=0
+            shift
+            ;;
+        --reg)
+            MANUAL_REG_KEY="$2"
+            shift 2
             ;;
         --n8n)
             ENABLE_N8N=1
@@ -194,7 +234,7 @@ if [[ $DO_UNINSTALL == 1 ]]; then
     log "Removing MCP stack..."
     if command -v curl &>/dev/null; then
         MCP_USE_VENV=0 curl -fsSL \
-            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh  | \
+            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh    | \
             bash -- --uninstall 2>/dev/null || true
     fi
     
@@ -246,14 +286,14 @@ sudo dpkg --add-architecture i386 2>/dev/null || true
 
 # Add WineHQ key
 sudo mkdir -p /etc/apt/keyrings
-wget -qO /tmp/winehq.key https://dl.winehq.org/wine-builds/winehq.key 
+wget -qO /tmp/winehq.key https://dl.winehq.org/wine-builds/winehq.key   
 sudo install -m644 /tmp/winehq.key /etc/apt/keyrings/
 
 # Add repository
 UBUNTU_CODENAME=$(lsb_release -cs)
 cat <<EOF | sudo tee /etc/apt/sources.list.d/winehq.sources
 Types: deb
-URIs: https://dl.winehq.org/wine-builds/ubuntu 
+URIs: https://dl.winehq.org/wine-builds/ubuntu   
 Suites: $UBUNTU_CODENAME
 Components: main
 Architectures: amd64 i386
@@ -285,6 +325,18 @@ sudo apt install -y \
     libjack-jackd2-dev \
     libwine-dev
 
+# FIX: For minimal mode, stop here with core packages
+if [[ $MINIMAL_MODE == 1 ]]; then
+    log "MINIMAL MODE: Skipping optional audio packages..."
+else
+    # Additional audio tools for full installation
+    sudo apt install -y \
+        jackd2 \
+        carla \
+        catia \
+        ladish
+fi
+
 ########## 5 – Build WineASIO ############################################
 log "=== STEP 3: Building WineASIO $WINEASIO_VERSION ==="
 warn "WineASIO $WINEASIO_VERSION will be built from source using Makefiles"
@@ -295,7 +347,7 @@ cd "$WINEASIO_BUILD_DIR" || die "Failed to create build directory"
 
 # Clone repository
 log "Cloning WineASIO repository..."
-if ! git clone https://github.com/wineasio/wineasio.git  .; then
+if ! git clone https://github.com/wineasio/wineasio.git    .; then
     cd "$HOME"
     rm -rf "$WINEASIO_BUILD_DIR"
     die "Failed to clone WineASIO repository"
@@ -431,6 +483,17 @@ fi
 # Configure Wine - use win10 for better compatibility
 winecfg -v win10 2>/dev/null || true
 
+# FIX: Disable Wine crash dialogs for better stability
+log "Disabling Wine crash dialogs..."
+cat > /tmp/disable_wine_dlg.reg <<'EOF'
+REGEDIT4
+
+[HKEY_CURRENT_USER\Software\Wine\WineDbg]
+"ShowCrashDialog"=dword:00000000
+EOF
+wine regedit /tmp/disable_wine_dlg.reg 2>/dev/null || true
+rm -f /tmp/disable_wine_dlg.reg
+
 ########## 7 – Install Windows libraries #################################
 log "=== STEP 5: Installing Windows runtime libraries ==="
 
@@ -444,22 +507,59 @@ WINEPREFIX="$PREFIX" winetricks $WINETRICKS_OPTS vcrun2019 corefonts dxvk
 
 ########## 8 – Register WineASIO in Wine prefix ##########################
 log "=== STEP 6: Registering WineASIO ==="
-WINEASIO_DLL_64="/usr/local/lib/wine/x86_64-windows/wineasio.dll"
 
-if [[ -f "$WINEASIO_DLL_64" ]]; then
-    log "Registering 64-bit WineASIO..."
-    WINEPREFIX="$PREFIX" wine regsvr32 "$WINEASIO_DLL_64" 2>/dev/null || true
-    
-    # Alternative registration method using wineasio-register if available
-    if command -v wineasio-register &>/dev/null; then
-        log "Using wineasio-register script..."
-        WINEPREFIX="$PREFIX" wineasio-register 2>/dev/null || true
-    fi
+# FIX: Copy WineASIO to the Wine prefix's system32 directory first
+# This is REQUIRED for regsvr32 to find the DLL
+WINEASIO_SYSTEM_DLL="$PREFIX/drive_c/windows/system32/wineasio.dll"
+WINEASIO_SYSTEM_DLL_SO="$PREFIX/drive_c/windows/system32/wineasio.dll.so"
+
+log "Copying WineASIO to Wine prefix..."
+if [[ -f "/usr/local/lib/wine/x86_64-windows/wineasio.dll" ]]; then
+    cp "/usr/local/lib/wine/x86_64-windows/wineasio.dll" "$WINEASIO_SYSTEM_DLL"
+    log "✓ Copied DLL to prefix"
 else
-    die "WineASIO DLL not found at $WINEASIO_DLL_64"
+    die "Source WineASIO DLL not found!"
 fi
 
-########## 9 – Install FL Studio #########################################
+if [[ -f "/usr/local/lib64/wine/wineasio64.dll.so" ]]; then
+    cp "/usr/local/lib64/wine/wineasio64.dll.so" "$WINEASIO_SYSTEM_DLL_SO"
+    log "✓ Copied .so to prefix"
+else
+    warn "Source WineASIO .so not found, continuing anyway..."
+fi
+
+# FIX: Use the wineasio-register script properly
+log "Registering WineASIO in Wine prefix..."
+WINEPREFIX="$PREFIX" wine regsvr32 "C:\\windows\\system32\\wineasio.dll" 2>/dev/null || {
+    warn "Initial registration failed, trying alternative method..."
+    WINEPREFIX="$PREFIX" wine64 regsvr32 "C:\\windows\\system32\\wineasio.dll" 2>/dev/null || true
+}
+
+# Alternative registration method using wineasio-register if available
+if command -v wineasio-register &>/dev/null; then
+    log "Using wineasio-register script..."
+    WINEPREFIX="$PREFIX" WINEDLLPATH="$PREFIX/drive_c/windows/system32" wineasio-register 2>/dev/null || true
+fi
+
+# FIX: Verify registration
+log "Verifying WineASIO registration..."
+if WINEPREFIX="$PREFIX" wine reg query "HKCU\\Software\\Wine\\Drivers" /v Audio 2>/dev/null | grep -q "asio"; then
+    log "✓ WineASIO appears to be registered in Wine"
+else
+    warn "✗ WineASIO may not be registered properly in Wine"
+fi
+
+########## 9 – Manual registry key (if provided) #########################
+# NEW: Support for manual registry key addition
+if [[ -n "$MANUAL_REG_KEY" && -f "$MANUAL_REG_KEY" ]]; then
+    log "=== STEP 6.5: Installing manual registry key ==="
+    log "Importing: $MANUAL_REG_KEY"
+    WINEPREFIX="$PREFIX" wine regedit "$(winepath -w "$MANUAL_REG_KEY")" 2>/dev/null || {
+        warn "Registry import had issues, but continuing..."
+    }
+fi
+
+########## 10 – Install FL Studio ########################################
 log "=== STEP 7: Installing FL Studio ==="
 INSTALLER_FILE="/tmp/flstudio_installer.exe"
 
@@ -468,7 +568,7 @@ if [[ "$INSTALLER_PATH" =~ ^https?:// ]]; then
     log "Downloading FL Studio installer from: $INSTALLER_PATH"
     
     # Check internet connectivity first
-    if ! curl -fsSL --max-time 10 https://www.image-line.com > /dev/null 2>&1; then
+    if ! curl -fsSL --max-time 10 https://www.image-line.com   > /dev/null 2>&1; then
         warn "Cannot reach Image-Line website. Please check your internet connection."
         warn "You can manually download the installer and use --installer /path/to/file"
     fi
@@ -476,8 +576,11 @@ if [[ "$INSTALLER_PATH" =~ ^https?:// ]]; then
     # Download with retry logic
     for i in {1..3}; do
         if curl -fsSL --connect-timeout 30 --max-time 300 "$INSTALLER_PATH" -o "$INSTALLER_FILE"; then
-            log "✓ Download successful"
-            break
+            # Verify file is not empty
+            if [[ -s "$INSTALLER_FILE" ]]; then
+                log "✓ Download successful"
+                break
+            fi
         fi
         
         warn "Download attempt $i failed, retrying..."
@@ -485,9 +588,11 @@ if [[ "$INSTALLER_PATH" =~ ^https?:// ]]; then
     done
     
     if [[ ! -f "$INSTALLER_FILE" || ! -s "$INSTALLER_FILE" ]]; then
+        # Fallback to manual download message
         die "Failed to download FL Studio installer after 3 attempts. \
-             \nPlease check the URL: $INSTALLER_PATH \
-             \nOr download manually from: https://www.image-line.com/download/fl-studio-installer.exe"
+             \nPlease download manually from: https://www.image-line.com/fl-studio-download/ \
+             \nThen run: ./$(basename "$0") --installer /path/to/downloaded/installer.exe \
+             \nOr use the direct URL pattern: https://install.image-line.com/flstudio/flstudio_win64_VERSION.exe"
     fi
 else
     if [[ -f "$INSTALLER_PATH" ]]; then
@@ -520,6 +625,7 @@ sleep 10
 # Monitor the process and show progress
 log "Waiting for installation to complete..."
 log "If the installer GUI doesn't appear, check for error messages above."
+log "Please complete the installation wizard manually."
 
 # FIX: Better wait logic with timeout
 for i in {1..180}; do
@@ -545,7 +651,7 @@ if ps -p $INSTALLER_PID > /dev/null 2>&1; then
     kill -9 $INSTALLER_PID 2>/dev/null || true
 fi
 
-########## 10 – Desktop integration ######################################
+########## 11 – Desktop integration ######################################
 log "=== STEP 8: Creating desktop integration ==="
 ICON_DIR="$HOME/.local/share/icons"
 mkdir -p "$ICON_DIR"
@@ -587,11 +693,19 @@ EOF
 
 update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 
-########## 11 – Install Yabridge #########################################
+# Skip optional features in minimal mode
+if [[ $MINIMAL_MODE == 1 ]]; then
+    log "MINIMAL MODE: Skipping optional post-installation steps..."
+    log "FL Studio installation complete!"
+    log "Next steps: Configure audio settings in FL Studio to use WineASIO"
+    exit 0
+fi
+
+########## 12 – Install Yabridge #########################################
 if [[ $ENABLE_YABRIDGE == 1 ]]; then
     log "=== STEP 9: Installing Yabridge ==="
     
-    YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest )
+    YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest   )
     YABRIDGE_URL=$(echo "$YABRIDGE_INFO" | jq -r '.assets[] | select(.name | test("tar\\.gz$")) | .browser_download_url' | head -1)
     
     if [[ -n "$YABRIDGE_URL" && "$YABRIDGE_URL" != "null" ]]; then
@@ -615,7 +729,7 @@ if [[ $ENABLE_YABRIDGE == 1 ]]; then
     fi
 fi
 
-########## 12 – Setup a2jmidid ###########################################
+########## 13 – Setup a2jmidid ###########################################
 if [[ $ENABLE_LOOPMIDI == 1 ]]; then
     log "=== STEP 10: Setting up a2jmidid MIDI bridge ==="
     
@@ -639,11 +753,11 @@ EOF
     fi
 fi
 
-########## 13 – Install MCP stack ########################################
+########## 14 – Install MCP stack ########################################
 if [[ $ENABLE_MCP == 1 ]]; then
     log "=== STEP 11: Installing MCP stack ==="
     
-    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh "
+    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh   "
     TMP_MCP_SCRIPT=$(mktemp)
     
     if curl -fsSL "$MCP_INSTALL_URL" -o "$TMP_MCP_SCRIPT"; then
@@ -655,24 +769,24 @@ if [[ $ENABLE_MCP == 1 ]]; then
     fi
 fi
 
-########## 14 – Install n8n ##############################################
+########## 15 – Install n8n ##############################################
 if [[ $ENABLE_N8N == 1 ]]; then
     log "=== STEP 12: Installing n8n ==="
     
     if ! command -v n8n &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_18.x  | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_18.x    | sudo -E bash -
         sudo apt install -y nodejs
     fi
     
     sudo npm install -g n8n n8n-nodes-mcp-client
 fi
 
-########## 15 – Setup Ollama #############################################
+########## 16 – Setup Ollama #############################################
 if [[ $ENABLE_OLLAMA == 1 ]]; then
     log "=== STEP 13: Setting up Ollama ==="
     
     if ! command -v ollama &>/dev/null; then
-        curl -fsSL https://ollama.com/install.sh  | sh
+        curl -fsSL https://ollama.com/install.sh    | sh
     fi
     
     if [[ "$OLLAMA_MODEL" != "qwen3:14b" ]]; then
@@ -694,7 +808,7 @@ EOF
     fi
 fi
 
-########## 16 – Create assistant configs #################################
+########## 17 – Create assistant configs #################################
 if [[ $ENABLE_CONTINUE == 1 ]]; then
     log "=== STEP 14: Creating Continue.ai configs ==="
     
@@ -745,7 +859,7 @@ if [[ $ENABLE_CURSOR == 1 ]]; then
 EOF
 fi
 
-########## 17 – PipeWire tweaks ##########################################
+########## 18 – PipeWire tweaks ##########################################
 if [[ $TWEAK_PIPEWIRE == 1 ]]; then
     log "=== STEP 15: Applying PipeWire low-latency tweaks ==="
     
@@ -764,7 +878,7 @@ EOF
     systemctl --user restart pipewire pipewire-pulse 2>/dev/null || true
 fi
 
-########## 18 – Patchbay template ########################################
+########## 19 – Patchbay template ########################################
 if [[ $PATCHBAY == 1 ]]; then
     log "=== STEP 16: Creating patchbay template ==="
     
@@ -784,7 +898,7 @@ if [[ $PATCHBAY == 1 ]]; then
 EOF
 fi
 
-########## 19 – Setup systemd services ###################################
+########## 20 – Setup systemd services ###################################
 if [[ $ENABLE_SYSTEMD == 1 ]]; then
     log "=== STEP 17: Setting up systemd services ==="
     
@@ -879,7 +993,7 @@ EOF
     done
 fi
 
-########## 20 – FL Studio registry tweaks ################################
+########## 21 – FL Studio registry tweaks ################################
 if [[ $DISABLE_FL_UPDATES == 1 ]]; then
     log "=== STEP 18: Disabling FL Studio auto-update ==="
     
@@ -895,12 +1009,12 @@ EOF
     rm -f /tmp/fl_disable_updates.reg
 fi
 
-########## 21 – Cleanup Wine processes ###################################
+########## 22 – Cleanup Wine processes ###################################
 # FIX: Kill any remaining wine processes to prevent hanging
 log "Cleaning up Wine processes..."
 wineserver -k 2>/dev/null || true
 
-########## 22 – Verification #############################################
+########## 23 – Verification #############################################
 log "=== STEP 19: Running verification ==="
 
 # Check WineASIO installation
@@ -927,6 +1041,8 @@ if WINEPREFIX="$PREFIX" wine reg query "HKCU\\Software\\Wine\\Drivers" /v Audio 
     log "✓ WineASIO appears to be registered in Wine"
 else
     warn "✗ WineASIO may not be registered properly in Wine"
+    log "To manually register, run:"
+    log "WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\wineasio.dll"
 fi
 
 # Check FL Studio installation
@@ -937,7 +1053,7 @@ else
     warn "✗ FL Studio executable not found (may need to complete installation manually)"
 fi
 
-########## 23 – Final instructions #######################################
+########## 24 – Final instructions #######################################
 log "=== INSTALLATION COMPLETE ==="
 log ""
 log "================ IMPORTANT CONFIGURATION STEPS ================"
@@ -953,6 +1069,12 @@ log "1. FL Studio should now be available in your applications menu"
 log "2. Wine prefix location: $PREFIX"
 log ""
 
+if [[ -n "$MANUAL_REG_KEY" ]]; then
+    log "3. Registry key imported: $MANUAL_REG_KEY"
+    log "   You should now be able to run FL Studio without activation prompts"
+    log ""
+fi
+
 if [[ $ENABLE_SYSTEMD == 1 ]]; then
     log "3. User services enabled and will start on login"
     log "   Check status: systemctl --user status flstudio-mcp"
@@ -964,20 +1086,28 @@ log "   - Open FL Studio"
 log "   - Go to Options > Audio Settings"
 log "   - Select 'WINEASIO' as the device"
 log "   - Set buffer size to 128 or 256 for low latency"
+log "   - If WineASIO doesn't appear, restart FL Studio or run step 5"
 log ""
 
 log "5. If WineASIO doesn't appear in FL Studio:"
-log "   Run: WINEPREFIX=\"$PREFIX\" wine regsvr32 /usr/local/lib/wine/x86_64-windows/wineasio.dll"
+log "   Run: WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\wineasio.dll"
 log ""
 
-log "6. For JACK/Audio issues:"
-log "   - Check: https://kx.studio/News/?action=view&url=wineasio-v110-released "
-log "   - Ubuntu 24.04 uses PipeWire which may have compatibility issues"
-log "   - Consider using JACK2 for professional audio work"
+log "6. For PipeWire users (Ubuntu 24.04+):"
+log "   - WineASIO may crash due to PipeWire sandboxing"
+log "   - Solution: Use JACK2 instead:"
+log "     sudo apt install jackd2"
+log "     Start JACK with: qjackctl"
+log "     Then start FL Studio"
 log ""
 
 log "7. To run FL Studio manually:"
 log "   WINEPREFIX=\"$PREFIX\" wine \"C:\\Program Files\\Image-Line\\FL Studio $FL_VERSION\\FL64.exe\""
+log ""
+
+log "8. Troubleshooting audio crackling:"
+log "   - Increase buffer size in FL Studio Audio Settings"
+log "   - Or use: WINEDEBUG=-all wine ... (to silence debug output)"
 log ""
 
 # FIX: Final cleanup to prevent hanging

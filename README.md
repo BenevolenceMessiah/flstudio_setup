@@ -42,9 +42,15 @@ curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/m
 ```
 
 ```bash
-# leanest install (Wine + Yabridge) + autostart services - (not recommended, missing all the unique AI dependencies, features, and endpoints)
+# leanest install (Wine + Yabridge) - (not recommended, missing all the unique AI dependencies, features, and endpoints)
 
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh | bash -- --systemd --no-loopmidi --no-mcp
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh | bash -- --no-features
+```
+
+```bash
+# leanest install (Wine + Yabridge) + local installation - (not recommended, missing all the unique AI dependencies, features, and endpoints)
+
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh | bash -- --no-features --installer /absolute/path/to/flstudio_win_21_1_99.exe --reg /absolute/path/to/flstudio.reg
 ```
 
 ```bash
@@ -52,6 +58,7 @@ curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/m
 
 curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh | bash -- \
   --installer /absolute/path/to/flstudio_win_21_1_99.exe \
+  --reg /absolute/path/to/flstudio.reg \
   --systemd
 ```
 
@@ -69,6 +76,8 @@ curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/m
 2. *If you're using a pre-downloaded EXE file for FL STUDIO, make sure you edit the file location via --installer when you paste the command.*
 3. The script **auto‑downloads the latest FL Studio installer** if you omit `--installer`.
 4. *Read on for all available command line arguments and features!*
+5. Tested with installing for `Current User`. I suggest this is what you do too.
+6. Registering/Unlocking FL Studio is still a bit wonky but you have a few options (either using the offline .reg file and using the `--reg` command line argument or using the file unlock option via the FL Studio authentication dialogue).
 
 ---
 
@@ -167,7 +176,7 @@ docker compose run --rm flstudio
 | `--tweak-pipewire` / `TWEAK_PIPEWIRE=1` | 0 | Apply low-latency PipeWire preset. |
 | `--patchbay` / `PATCHBAY=1` | 0 | Write QJackCtl/Carla patchbay template.  |
 | `--disable-fl-updates` / `DISABLE_FL_UPDATES=1` | 0 | Turn off FL-Studio auto-update dialog. |
-| `--uninstall`                          | —  | Remove all packages, Wine prefix, user services, icons, assistants. |
+| `--uninstall`                          | —  | Remove all packages, Wine prefix, user services, icons, assistants.  |
 
 ### **Notes 2:**
 
