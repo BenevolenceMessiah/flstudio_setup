@@ -1,556 +1,871 @@
 #!/usr/bin/env bash
-# flstudio_setup.sh – FL Studio + Wine + AI tool-chain
+# flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu
+# Version: 2.0.0 (Production Release)
+# Tested on: Ubuntu 22.04 LTS, 24.04 LTS with Wine 10.x, FL Studio 21
+# Repository: https://github.com/BenevolenceMessiah/flstudio_setup
 
+# ============================================================================
+# 0 – CRITICAL: Initialize all variables to prevent unbound variable errors
+# ============================================================================
+
+# This MUST come before set -Eeuo pipefail to avoid "unbound variable" errors
+VERBOSE=${VERBOSE:-0}
+DO_UNINSTALL=${DO_UNINSTALL:-0}
+DO_UNINSTALL_FULL=${DO_UNINSTALL_FULL:-0}
+DO_UPDATE=${DO_UPDATE:-0}
+MINIMAL_MODE=${MINIMAL_MODE:-0}
+ENABLE_MCP=${ENABLE_MCP:-1}
+ENABLE_CONTINUE=${ENABLE_CONTINUE:-1}
+ENABLE_LOOPMIDI=${ENABLE_LOOPMIDI:-1}
+ENABLE_YABRIDGE=${ENABLE_YABRIDGE:-1}
+ENABLE_N8N=${ENABLE_N8N:-0}
+ENABLE_OLLAMA=${ENABLE_OLLAMA:-0}
+ENABLE_CURSOR=${ENABLE_CURSOR:-0}
+ENABLE_SYSTEMD=${ENABLE_SYSTEMD:-0}
+TWEAK_PIPEWIRE=${TWEAK_PIPEWIRE:-0}
+DISABLE_FL_UPDATES=${DISABLE_FL_UPDATES:-0}
+PATCHBAY=${PATCHBAY:-0}
+USE_KXSTUDIO=${USE_KXSTUDIO:-0}
+FORCE_REINSTALL=${FORCE_REINSTALL:-0}
+FORCE_REBUILD=${FORCE_REBUILD:-0}
+HIDE_BROKEN_TABS=${HIDE_BROKEN_TABS:-0}
+PRESERVE_PROJECTS=${PRESERVE_PROJECTS:-0}
+CREATE_CMD_LAUNCHER=${CREATE_CMD_LAUNCHER:-0}
+NO_TIMEOUT=${NO_TIMEOUT:-0}
+AUDIO_SAMPLE_RATE=${AUDIO_SAMPLE_RATE:-48000}
+AUDIO_BUFFER_SIZE=${AUDIO_BUFFER_SIZE:-256}
+MANUAL_REG_KEY=${MANUAL_REG_KEY:-}
+INSTALLER_PATH=${INSTALLER_PATH:-}
+WINE_BRANCH=${WINE_BRANCH:-}
+OLLAMA_MODEL=${OLLAMA_MODEL:-}
+PREFIX=${PREFIX:-}
+WINE_TIMEOUT=${WINE_TIMEOUT:-}
+CURL_TIMEOUT=${CURL_TIMEOUT:-}
+WINE_CMD=${WINE_CMD:-wine}
+WINEDEBUG=${WINEDEBUG:--all}
+DEBIAN_FRONTEND=${DEBIAN_FRONTEND:-noninteractive}
+
+# Now safe to enable strict error checking
 set -Eeuo pipefail
 
-# Error handling with line number
-trap 'log "ERROR: Command failed on line $LINENO"' ERR
+# ============================================================================
+# 1 – MODULAR FLAG PARSER (MUST BE FIRST)
+# ============================================================================
 
-# Logging functions
+parse_flags() {
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --installer) INSTALLER_PATH="$2"; shift 2 ;;
+            --wine) WINE_BRANCH="$2"; shift 2 ;;
+            --sample-rate) AUDIO_SAMPLE_RATE="$2"; shift 2 ;;
+            --buffer-size) AUDIO_BUFFER_SIZE="$2"; shift 2 ;;
+            --audio-interface) AUDIO_INTERFACE="$2"; shift 2 ;;
+            --ollama-model) OLLAMA_MODEL="$2"; shift 2 ;;
+            --no-mcp) ENABLE_MCP=0; shift ;;
+            --no-continue) ENABLE_CONTINUE=0; shift ;;
+            --no-loopmidi) ENABLE_LOOPMIDI=0; shift ;;
+            --no-yabridge) ENABLE_YABRIDGE=0; shift ;;
+            --no-features) MINIMAL_MODE=1; ENABLE_MCP=0; ENABLE_CONTINUE=0; ENABLE_LOOPMIDI=0; ENABLE_YABRIDGE=0; 
+                           ENABLE_N8N=0; ENABLE_OLLAMA=0; ENABLE_CURSOR=0; ENABLE_SYSTEMD=0; TWEAK_PIPEWIRE=0; 
+                           PATCHBAY=0; DISABLE_FL_UPDATES=0; shift ;;
+            --no-systemd) ENABLE_SYSTEMD=0; shift ;;
+            --tweak-pipewire) TWEAK_PIPEWIRE=1; shift ;;
+            --patchbay) PATCHBAY=1; shift ;;
+            --disable-fl-updates) DISABLE_FL_UPDATES=1; shift ;;
+            --n8n) ENABLE_N8N=1; shift ;;
+            --ollama) ENABLE_OLLAMA=1; shift ;;
+            --cursor) ENABLE_CURSOR=1; shift ;;
+            --systemd) ENABLE_SYSTEMD=1; shift ;;
+            --use-kxstudio) USE_KXSTUDIO=1; shift ;;
+            --reg) MANUAL_REG_KEY="$2"; shift 2 ;;
+            --hide-broken) HIDE_BROKEN_TABS=1; shift ;;
+            --preserve-projects) PRESERVE_PROJECTS=1; shift ;;
+            --path) CREATE_CMD_LAUNCHER=1; shift ;;
+            --force-reinstall) FORCE_REINSTALL=1; shift ;;
+            --force-rebuild) FORCE_REBUILD=1; shift ;;
+            --no-timeout) NO_TIMEOUT=1; shift ;;
+            --verbose|-v) VERBOSE=1; shift ;;
+            --uninstall) DO_UNINSTALL=1; shift ;;
+            --uninstall-full) DO_UNINSTALL_FULL=1; shift ;;
+            --update) DO_UPDATE=1; shift ;;
+            --help|-h) show_help ;;
+            *) die "Unknown flag: $1 (use --help for usage)" ;;
+        esac
+    done
+}
+
+# ============================================================================
+# 2 – ENHANCED LOGGING & GLOBALS
+# ============================================================================
+
+LOG="$HOME/flstudio_setup_$(date +%F_%H-%M-%S).log"
+
 log() {
-    echo -e "\e[36m[INFO]\e[0m $*"
-    echo "[INFO] $*" >> "$LOG"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "\e[36m[INFO]\e[0m $*" | tee -a "$LOG"
+    echo "[${timestamp}] [INFO] $*" >> "$LOG"
+}
+
+debug() {
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo -e "\e[35m[DEBUG]\e[0m $*" | tee -a "$LOG"
+    else
+        echo "[${timestamp}] [DEBUG] $*" >> "$LOG"
+    fi
 }
 
 warn() {
-    echo -e "\e[33m[WARNING]\e[0m $*"
-    echo "[WARNING] $*" >> "$LOG"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "\e[33m[WARNING]\e[0m $*" | tee -a "$LOG" >&2
+    echo "[${timestamp}] [WARNING] $*" >> "$LOG"
 }
 
 die() {
-    echo -e "\e[31m[ERROR]\e[0m $*" >&2
-    echo "[ERROR] $*" >> "$LOG"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo -e "\e[31m[ERROR]\e[0m $*" | tee -a "$LOG" >&2
+    echo "[${timestamp}] [ERROR] $*" >> "$LOG"
     exit 1
 }
 
-########## 0 – Globals & defaults ################################
-LOG="$HOME/flstudio_setup_$(date +%F_%H-%M-%S).log"
-export DEBIAN_FRONTEND=noninteractive
+# ============================================================================
+# 3 – UTILITY FUNCTIONS
+# ============================================================================
 
-# FIX: Remove trailing space and use working URL format
-# The download page can be parsed, but for reliability, we'll use the known pattern
-FL_STUDIO_LATEST_VERSION="25.1.6.4997"
-: "${INSTALLER_PATH:=https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe}"
-: "${WINE_BRANCH:=staging}"
-: "${OLLAMA_MODEL:=qwen3:14b}"
+run_with_timeout() {
+    local timeout=$1; shift
+    timeout "$timeout" "$@" || {
+        local exit_code=$?
+        [[ $exit_code == 124 ]] && warn "Command timed out after ${timeout}s: $*" || warn "Command failed with code $exit_code: $*"
+        return $exit_code
+    }
+}
 
-PREFIX="${PREFIX:-$HOME/.wine-flstudio}"
-WINEASIO_VERSION="v1.3.0"
-FL_VERSION="21"
+safe_kill() {
+    local pid=$1
+    if kill -0 "$pid" 2>/dev/null; then
+        kill "$pid" 2>/dev/null || true
+        sleep 2
+        kill -9 "$pid" 2>/dev/null || true
+    fi
+}
 
-# Feature toggles (all enabled by default)
-ENABLE_MCP=1
-ENABLE_CONTINUE=1
-ENABLE_LOOPMIDI=1
-ENABLE_YABRIDGE=1
-ENABLE_N8N=0
-ENABLE_OLLAMA=0
-ENABLE_CURSOR=0
-ENABLE_SYSTEMD=0
-TWEAK_PIPEWIRE=0
-DISABLE_FL_UPDATES=0
-PATCHBAY=0
-DO_UNINSTALL=0
-MINIMAL_MODE=0  # NEW: Minimal installation mode
+command_exists() {
+    command -v "$1" &>/dev/null
+}
 
-# FIX: Add timeout for network and Wine operations
-export CURL_TIMEOUT=60
-export WINE_TIMEOUT=30
+# Add a directory to PATH if it's not already there
+ensure_path_entry() {
+    local dir="$1"
+    local shell_rc
+    
+    # Check if directory is already in PATH (handles various formats)
+    if [[ ":$PATH:" != *":$dir:"* && ":$PATH:" != *":$dir" && "$PATH" != "$dir:"* && "$PATH" != "$dir" ]]; then
+        warn "Command launcher directory '$dir' is not in your PATH"
+        
+        # Detect user's shell and choose appropriate config file
+        case "$SHELL" in
+            */zsh)
+                shell_rc="$HOME/.zshrc"
+                ;;
+            */bash)
+                shell_rc="$HOME/.bashrc"
+                ;;
+            */fish)
+                shell_rc="$HOME/.config/fish/config.fish"
+                echo "set -x PATH $dir \$PATH" >> "$shell_rc"
+                log "✓ Added $dir to PATH in $shell_rc"
+                log "  Please restart your terminal or run: source $shell_rc"
+                return 0
+                ;;
+            *)
+                shell_rc="$HOME/.profile"
+                ;;
+        esac
+        
+        # Add to PATH (avoid duplicates)
+        echo "export PATH=\"$dir:\$PATH\"" >> "$shell_rc"
+        log "✓ Added $dir to PATH in $shell_rc"
+        log "  Please restart your terminal or run: source $shell_rc"
+    else
+        debug "✓ $dir is already in PATH"
+    fi
+}
 
-# FIX: Prevent Wine preloader crashes with PipeWire
-export WINE_DISABLE_MEMORY_MANAGER=1
-export WINE_LARGE_ADDRESS_AWARE=1
+install_packages() {
+    local -a packages=("$@")
+    for pkg in "${packages[@]}"; do
+        debug "Installing: $pkg"
+        if sudo apt install -y "$pkg" 2>/dev/null; then
+            debug "✓ $pkg installed"
+        else
+            warn "✗ Failed to install $pkg (may be optional)"
+        fi
+    done
+}
 
-# WARNING: WineASIO compatibility with PipeWire
-if [[ "$TWEAK_PIPEWIRE" == "1" ]]; then
-    warn "PipeWire detected! WineASIO may not work with PipeWire's JACK implementation."
-    warn "Consider using JACK2 instead of PipeWire for professional audio work."
-    warn "To use JACK2: sudo apt install jackd2 qjackctl"
-fi
+check_internet() {
+    if ! curl -fsSL --max-time 10 https://www.image-line.com >/dev/null 2>&1; then
+        warn "Cannot reach Image-Line website. Please check internet connection."
+        return 1
+    fi
+    debug "✓ Internet connectivity verified"
+    return 0
+}
 
-# Show help
+get_ubuntu_version() {
+    lsb_release -rs 2>/dev/null || echo "unknown"
+}
+
+get_wine_info() {
+    WINE_VERSION=$(wine --version 2>/dev/null || echo "wine not found")
+    if command -v wine64 &>/dev/null; then
+        WINE_CMD="wine64"
+        debug "Using wine64 command (preferred for 64-bit)"
+    else
+        debug "Using wine command (wine64 not found)"
+    fi
+    debug "Wine: $WINE_VERSION, Command: $WINE_CMD"
+}
+
+wait_for_wine_prefix() {
+    local prefix=$1 timeout=${2:-60}
+    debug "Waiting up to ${timeout}s for Wine prefix..."
+    for i in $(seq 1 "$timeout"); do
+        [[ -f "$prefix/system.reg" ]] && debug "✓ Wine prefix ready" && return 0
+        sleep 1
+    done
+    warn "Wine prefix may not be fully initialized"
+    return 1
+}
+
+# ============================================================================
+# 4 – SYSTEM TUNING
+# ============================================================================
+
+tune_system_for_wine() {
+    debug "Applying system tuning for Wine..."
+    
+    if [[ -w /proc/sys/vm/legacy_va_layout ]] && [[ $(cat /proc/sys/vm/legacy_va_layout) != 0 ]]; then
+        echo 0 | sudo tee /proc/sys/vm/legacy_va_layout >/dev/null 2>&1 || warn "Could not set legacy_va_layout"
+    fi
+    
+    ulimit -s 8192 2>/dev/null || true
+    ulimit -n 4096 2>/dev/null || true
+    
+    export WINE_DISABLE_MEMORY_MANAGER=1
+    export WINE_LARGE_ADDRESS_AWARE=1
+}
+
+# ============================================================================
+# 5 – HELP TEXT
+# ============================================================================
+
 show_help() {
     cat <<'EOF'
-Usage: ./flstudio_setup.sh [OPTIONS]
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                   FL Studio Linux Setup - Professional Edition            ║
+║                         Version 2.0.0 | Ubuntu 22.04+                     ║
+╚═══════════════════════════════════════════════════════════════════════════╝
 
-FL Studio Linux Setup - One-command installer for FL Studio with Wine,
-audio tools, and AI/MCP integration.
+USAGE:
+    ./flstudio_setup.sh [OPTIONS]
 
-OPTIONS:
-  --installer <file|URL>    Path or URL to FL Studio installer
-  --wine <stable|staging>   Choose Wine branch (default: staging)
-  --ollama-model <tag>      Pick Ollama model (default: qwen3:14b)
-  --no-mcp                  Skip MCP installation
-  --no-continue             Skip Continue.ai assistant files
-  --no-loopmidi            Skip a2jmidid bridge installation
-  --no-yabridge            Skip Yabridge installation
-  --no-features            MINIMAL MODE: Only FL Studio + WineASIO
-  --reg <file>             Manually add registry key (e.g., FLRegkey.reg)
-  --n8n                    Install n8n workflow engine
-  --ollama                 Install Ollama
-  --cursor                 Add Cursor MCP integration
-  --systemd                Create user-level systemd services
-  --tweak-pipewire         Apply low-latency PipeWire preset
-  --patchbay               Write QJackCtl/Carla patchbay XML
-  --disable-fl-updates     Disable FL Studio auto-update dialog
-  --uninstall              Remove all installed components
-  --help, -h               Show this help
+INSTALLATION:
+    --installer <file|URL>    Path or URL to FL Studio installer
+    --wine <stable|staging>   Wine branch (default: staging)
+    --reg <file>              Manual registry key (e.g., FLRegkey.reg)
+    --use-kxstudio           Use KXStudio repositories for WineASIO
+    --no-timeout             Disable installer timeout
+    --force-reinstall        Force reinstall even if version matches
+    --force-rebuild          Rebuild WineASIO from source
+    --update                 Update all components to latest versions
+
+AUDIO CONFIGURATION:
+    --sample-rate <rate>      Sample rate in Hz (default: 48000)
+    --buffer-size <size>      Buffer size in samples (default: 256)
+    --audio-interface <name>  Specific interface name
+    --tweak-pipewire         Apply PipeWire low-latency tweaks
+
+FEATURE TOGGLES:
+    --no-features            MINIMAL MODE: Only FL Studio + WineASIO
+    --no-mcp                 Skip MCP installation
+    --no-continue            Skip Continue.ai assistant files
+    --no-loopmidi            Skip a2jmidid bridge
+    --no-yabridge            Skip Yabridge installation
+    --no-systemd             Skip systemd services
+    --disable-fl-updates     Disable FL Studio auto-update dialog
+    --hide-broken            Hide broken WebView2 tabs (SOUNDS, HELP, GOPHER)
+    --patchbay               Create QJackCtl patchbay template
+    --n8n                    Install n8n workflow engine
+    --ollama                 Install Ollama AI service
+    --cursor                 Create Cursor IDE MCP config
+    --systemd                Enable all systemd services
+
+USER EXPERIENCE:
+    --preserve-projects      Always preserve project files during uninstall
+    --path                   Create 'fl-studio' command-line launcher
+    --verbose|-v             Enable detailed debug output
+    --help|-h               Show this help
+
+UNINSTALL OPTIONS:
+    --uninstall              Remove installation (keeps user data)
+    --uninstall-full         Remove installation AND all user data
 
 ENVIRONMENT VARIABLES:
-  INSTALLER_PATH           Override installer source
-  WINE_BRANCH              Override Wine branch
-  OLLAMA_MODEL             Override Ollama model
+    Installation Control:
+        INSTALLER_PATH          Override installer source path/URL
+        WINE_BRANCH             Override Wine branch (stable/staging)
+        OLLAMA_MODEL            Override Ollama model (default: hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL)
+        PREFIX                  Override Wine prefix location
+        MANUAL_REG_KEY          Path to manual registry key file
+
+    Audio Configuration:
+        AUDIO_SAMPLE_RATE       Default sample rate (default: 48000)
+        AUDIO_BUFFER_SIZE       Default buffer size (default: 256)
+        WINEASIO_VERSION        Override WineASIO version (default: v1.3.0)
+
+    Behavior & Features:
+        VERBOSE                 Enable verbose output (1/0)
+        MINIMAL_MODE            Skip all optional features (1/0)
+        ENABLE_MCP              Install MCP stack (default: 1)
+        ENABLE_CONTINUE         Create Continue.ai configs (default: 1)
+        ENABLE_LOOPMIDI         Setup MIDI bridge (default: 1)
+        ENABLE_YABRIDGE         Install Yabridge plugin host (default: 1)
+        ENABLE_N8N              Install n8n workflows (default: 0)
+        ENABLE_OLLAMA           Install Ollama AI (default: 0)
+        ENABLE_CURSOR           Create Cursor MCP config (default: 0)
+        ENABLE_SYSTEMD          Create systemd services (default: 0)
+        TWEAK_PIPEWIRE          Apply PipeWire tweaks (default: 0)
+        DISABLE_FL_UPDATES      Disable FL update checks (default: 0)
+        PATCHBAY                Create patchbay template (default: 0)
+        USE_KXSTUDIO            Use KXStudio repositories (default: 0)
+        FORCE_REINSTALL         Force reinstallation (default: 0)
+        FORCE_REBUILD           Force WineASIO rebuild (default: 0)
+        HIDE_BROKEN_TABS        Hide WebView2 tabs (default: 0)
+        PRESERVE_PROJECTS       Preserve projects on uninstall (default: 0)
+        CREATE_CMD_LAUNCHER     Create 'fl-studio' command (default: 0)
+        NO_TIMEOUT              Disable installer timeout (default: 0)
+
+    Advanced/Timeouts:
+        WINE_TIMEOUT            Wine operation timeout seconds (default: 900)
+        CURL_TIMEOUT            Download timeout seconds (default: 600)
+        WINE_CMD                Wine command override (default: wine)
+        WINEDEBUG               Wine debug output (default: -all)
+        DEBIAN_FRONTEND         APT frontend mode (default: noninteractive)
+        FL_STUDIO_LATEST_VERSION Override FL Studio version (default: 25.2.0.5125)
 
 EXAMPLES:
-  # Minimal installation (just FL Studio + WineASIO)
-  ./flstudio_setup.sh --no-features
-  
-  # Install with offline registry key
-  ./flstudio_setup.sh --reg ~/Downloads/FLRegkey.reg
+    # Minimal installation
+    ./flstudio_setup.sh --no-features
 
-WARNING: Ubuntu 24.04+ uses PipeWire by default, which has known compatibility
-         issues with WineASIO. For best results:
-         1. Use JACK2: sudo apt install jackd2
-         2. Or run with --tweak-pipewire (experimental)
+    # Install with offline key
+    ./flstudio_setup.sh --reg ~/Downloads/FLRegkey.reg
 
+    # Install from URL with command launcher
+    ./flstudio_setup.sh --installer https://example.com/flstudio.exe --path
+
+    # Update existing installation
+    ./flstudio_setup.sh --update
+
+    # Fully uninstall but keep projects
+    ./flstudio_setup.sh --uninstall --preserve-projects
+
+    # Professional setup with custom audio
+    ./flstudio_setup.sh --sample-rate 44100 --buffer-size 128 --systemd
+
+    # Using environment variables
+    VERBOSE=1 WINE_BRANCH=stable ./flstudio_setup.sh --no-features
+
+IMPORTANT NOTES:
+    • Browser integration automatically configured for license activation
+    • Use JACK2 for best audio performance (Ubuntu 24.04+ uses PipeWire)
+    • Full log saved to: ~/flstudio_setup_*.log
+    • Run with --verbose for detailed debugging
+
+BUG REPORTS: https://github.com/BenevolenceMessiah/flstudio_setup/issues 
 EOF
     exit 0
 }
 
-########## 1 – Flag parser ###############################################
-# FIX: Added --no-features and --reg flags
-MANUAL_REG_KEY=""
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --installer)
-            INSTALLER_PATH="$2"
-            shift 2
-            ;;
-        --wine)
-            WINE_BRANCH="$2"
-            shift 2
-            ;;
-        --ollama-model)
-            OLLAMA_MODEL="$2"
-            shift 2
-            ;;
-        --no-mcp)
-            ENABLE_MCP=0
-            shift
-            ;;
-        --no-continue)
-            ENABLE_CONTINUE=0
-            shift
-            ;;
-        --no-loopmidi)
-            ENABLE_LOOPMIDI=0
-            shift
-            ;;
-        --no-yabridge)
-            ENABLE_YABRIDGE=0
-            shift
-            ;;
-        --no-features)
-            MINIMAL_MODE=1
-            # Disable all optional features
-            ENABLE_MCP=0
-            ENABLE_CONTINUE=0
-            ENABLE_LOOPMIDI=0
-            ENABLE_YABRIDGE=0
-            ENABLE_N8N=0
-            ENABLE_OLLAMA=0
-            ENABLE_CURSOR=0
-            ENABLE_SYSTEMD=0
-            TWEAK_PIPEWIRE=0
-            DISABLE_FL_UPDATES=0
-            PATCHBAY=0
-            shift
-            ;;
-        --reg)
-            MANUAL_REG_KEY="$2"
-            shift 2
-            ;;
-        --n8n)
-            ENABLE_N8N=1
-            shift
-            ;;
-        --ollama)
-            ENABLE_OLLAMA=1
-            shift
-            ;;
-        --cursor)
-            ENABLE_CURSOR=1
-            shift
-            ;;
-        --systemd)
-            ENABLE_SYSTEMD=1
-            shift
-            ;;
-        --tweak-pipewire)
-            TWEAK_PIPEWIRE=1
-            warn "PipeWire mode enabled - WineASIO compatibility issues possible"
-            shift
-            ;;
-        --patchbay)
-            PATCHBAY=1
-            shift
-            ;;
-        --disable-fl-updates)
-            DISABLE_FL_UPDATES=1
-            shift
-            ;;
-        --uninstall)
-            DO_UNINSTALL=1
-            shift
-            ;;
-        --help|-h)
-            show_help
-            ;;
-        *)
-            die "Unknown flag: $1"
-            ;;
-    esac
-done
+# ============================================================================
+# 6 – CONSTANTS & GLOBALS (Set after flag parsing)
+# ============================================================================
 
-########## 2 – Uninstall #################################################
-if [[ $DO_UNINSTALL == 1 ]]; then
+# Re-initialize with potentially updated values after flag parsing
+export DEBIAN_FRONTEND="$DEBIAN_FRONTEND"
+export WINEDEBUG="$WINEDEBUG"
+
+# Parse flags now (variables already initialized above)
+parse_flags "$@"
+
+# Set additional global constants after flag parsing
+WINE_TIMEOUT=${WINE_TIMEOUT:-900}
+CURL_TIMEOUT=${CURL_TIMEOUT:-600}
+TIMEOUT_ARG=$([[ $NO_TIMEOUT == 1 ]] && echo "0" || echo "$WINE_TIMEOUT")
+
+FL_STUDIO_LATEST_VERSION="25.2.0.5125"
+INSTALLER_PATH=${INSTALLER_PATH:-"https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe"}
+WINE_BRANCH=${WINE_BRANCH:-"staging"}
+PREFIX=${PREFIX:-"$HOME/.wine-flstudio"}
+OLLAMA_MODEL=${OLLAMA_MODEL:-"hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL"}
+
+WINEASIO_VERSION="v1.3.0"
+FL_VERSION="25"
+
+# ============================================================================
+# 7 – UNINSTALLER (Enhanced)
+# ============================================================================
+
+if [[ $DO_UNINSTALL == 1 || $DO_UNINSTALL_FULL == 1 ]]; then
     log "=== UNINSTALLING FL STUDIO SETUP ==="
     
-    # FIX: Kill any running Wine processes first
+    # Stop Wine processes
     log "Stopping Wine processes..."
     wineserver -k 2>/dev/null || true
-    pkill -f "wine.*flstudio" 2>/dev/null || true
-    sleep 2
+    pkill -9 -f "wine.*flstudio" 2>/dev/null || true
+    sleep 3
     
-    # Stop and remove user services
-    log "Removing systemd services..."
-    for service in flstudio-mcp a2jmidid n8n ollama; do
-        systemctl --user disable --now "${service}.service" 2>/dev/null || true
-        rm -f ~/.config/systemd/user/"${service}.service"
-    done
-    systemctl --user daemon-reload
+    # Stop systemd services
+    if [[ $ENABLE_SYSTEMD == 1 ]]; then
+        log "Stopping systemd services..."
+        for service in flstudio-mcp a2jmidid n8n ollama; do
+            systemctl --user disable --now "${service}.service" 2>/dev/null || true
+            rm -f ~/.config/systemd/user/"${service}.service"
+        done
+        systemctl --user daemon-reload
+    fi
     
     # Remove MCP stack
     log "Removing MCP stack..."
     if command -v curl &>/dev/null; then
         MCP_USE_VENV=0 curl -fsSL \
-            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh    | \
+            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh | \
             bash -- --uninstall 2>/dev/null || true
     fi
     
-    # Remove packages
-    log "Removing packages..."
-    sudo apt -y remove winehq-* wine-staging wine-stable winetricks 2>/dev/null || true
-    sudo apt -y remove a2jmidid n8n nodejs 2>/dev/null || true
-    sudo apt -y autoremove 2>/dev/null || true
+    # Prompt for Wine packages removal
+    if [[ $DO_UNINSTALL_FULL == 1 ]]; then
+        read -p "Also remove Wine packages? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            log "Removing Wine packages..."
+            sudo apt -y remove winehq-* wine-staging wine-stable winetricks 2>/dev/null || true
+            sudo apt -y autoremove 2>/dev/null || true
+        fi
+    fi
     
     # Remove WineASIO
     log "Removing WineASIO..."
     sudo rm -f /usr/local/lib/wine/x86_64-windows/wineasio.dll
     sudo rm -f /usr/local/lib64/wine/wineasio64.dll.so
     sudo rm -f /usr/local/bin/wineasio-register
+    sudo rm -f /usr/lib/x86_64-linux-gnu/wine/x86_64-windows/wineasio.dll
+    sudo rm -f /usr/lib/x86_64-linux-gnu/wine/x86_64-unix/wineasio64.dll.so
     
-    # Remove FL Studio data
-    log "Removing FL Studio data..."
+    # Remove FL Studio installation
+    log "Removing FL Studio installation..."
     rm -rf "$PREFIX"
-    rm -rf ~/.local/{bin,share}/flstudio-*
-    rm -rf ~/.local/share/yabridge
-    rm -f ~/.local/bin/yabridge
-    rm -f ~/.local/bin/yabridgectl
-    
-    # Remove desktop files
+    rm -f ~/.local/bin/flstudio-launcher
+    rm -f ~/.local/bin/fl-studio
     rm -f ~/.local/share/applications/flstudio.desktop
     rm -f ~/.local/share/icons/flstudio.png
+    
+    # Remove audio configuration
+    rm -f ~/.config/pipewire/pipewire.conf.d/90-lowlatency.conf
+    rm -f ~/.config/rncbc.org/QjackCtl/patches/flstudio.xml
+    
+    # Handle user data
+    FL_USER_DATA_DIR=~/Documents/Image-Line
+    if [[ $PRESERVE_PROJECTS == 1 || $DO_UNINSTALL_FULL == 0 ]]; then
+        if [[ -d "$FL_USER_DATA_DIR" ]]; then
+            log "Preserving user projects in $FL_USER_DATA_DIR"
+            log "To remove manually: rm -rf \"$FL_USER_DATA_DIR\""
+        fi
+    else
+        log "Removing user data..."
+        rm -rf "$FL_USER_DATA_DIR"
+        rm -rf ~/.local/share/flstudio-*
+    fi
     
     # Remove assistant configs
     rm -f ~/.continue/assistants/flstudio-mcp.yaml
     rm -f ~/.continue/assistants/ollama-mcp.yaml
     rm -f ~/.cursor/mcp.json
     
-    # Remove PipeWire tweaks
-    rm -f ~/.config/pipewire/pipewire.conf.d/90-lowlatency.conf
-    
-    # Remove patchbay
-    rm -f ~/.config/rncbc.org/QjackCtl/patches/flstudio.xml
-    
-    log "Uninstall complete!"
+    log "✓ Uninstall complete!"
     exit 0
 fi
 
-########## 3 – System update & Wine repo #################################
-log "=== STEP 1: Updating system and adding WineHQ repository ==="
+# ============================================================================
+# 8 – VERSION & UPDATE CHECK
+# ============================================================================
+
+get_installed_version() {
+    local version_file="$PREFIX/flstudio_version.txt"
+    [[ -f "$version_file" ]] && cat "$version_file" || echo ""
+}
+
+extract_version_from_url() {
+    local url="$1"
+    if [[ "$url" =~ flstudio_win64_([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)\.exe ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo ""
+    fi
+}
+
+check_for_updates() {
+    log "=== VERSION CHECK ==="
+    
+    local installed_version installed_version_file
+    installed_version_file="$PREFIX/flstudio_version.txt"
+    installed_version=$(get_installed_version)
+    
+    local target_version
+    if [[ "$INSTALLER_PATH" =~ ^https?:// ]]; then
+        target_version=$(extract_version_from_url "$INSTALLER_PATH")
+    else
+        target_version=$(extract_version_from_url "$INSTALLER_PATH")
+    fi
+    
+    [[ -z "$target_version" ]] && target_version="$FL_STUDIO_LATEST_VERSION"
+    
+    log "Installed: ${installed_version:-None}"
+    log "Target: $target_version"
+    
+    if [[ -n "$installed_version" && "$installed_version" == "$target_version" && $FORCE_REINSTALL == 0 && $DO_UPDATE == 0 ]]; then
+        log "✓ Already installed and up-to-date"
+        read -p "Continue anyway? (y/N): " -n 1 -r
+        echo
+        [[ $REPLY =~ ^[Yy]$ ]] || exit 0
+    elif [[ $DO_UPDATE == 1 ]]; then
+        log "Update mode enabled - proceeding with update..."
+        FORCE_REINSTALL=1
+        FORCE_REBUILD=1
+    fi
+    
+    export TARGET_FL_VERSION="$target_version"
+}
+
+# ============================================================================
+# 9 – MAIN INSTALLATION
+# ============================================================================
+
+log "=== FL STUDIO SETUP STARTED ==="
+log "Log file: $LOG"
+log "Options: WINE_BRANCH=$WINE_BRANCH, PREFIX=$PREFIX, FORCE_REINSTALL=$FORCE_REINSTALL"
+log "Features: MINIMAL=$MINIMAL_MODE, KXSTUDIO=$USE_KXSTUDIO, NO_TIMEOUT=$NO_TIMEOUT"
+
+# System check & tuning
+tune_system_for_wine
+
+# Check required commands
+for cmd in curl git make gcc; do
+    command_exists "$cmd" || die "Required command not found: $cmd"
+done
+
+# Check internet
+check_internet
+
+# Get Wine info
+get_wine_info
+[[ "$WINE_VERSION" == *"not found"* ]] && die "Wine not found! Install Wine first"
+
+# Version check
+check_for_updates
+
+# Check Ubuntu version
+UBUNTU_VER=$(get_ubuntu_version)
+if (( $(echo "$UBUNTU_VER >= 24.04" | bc -l) )); then
+    warn "Ubuntu $UBUNTU_VER detected - PipeWire may cause WineASIO issues"
+    warn "Recommended: sudo apt install jackd2 && use JACK instead of PipeWire"
+fi
+
+# Update and upgrade system packages before installation
+log "=== UPDATING SYSTEM PACKAGES ==="
 sudo apt update && sudo apt upgrade -y
 
-# Enable i386 architecture
-sudo dpkg --add-architecture i386 2>/dev/null || true
+# ============================================================================
+# 10 – WINE REPOSITORY SETUP
+# ============================================================================
 
-# Add WineHQ key
-sudo mkdir -p /etc/apt/keyrings
-wget -qO /tmp/winehq.key https://dl.winehq.org/wine-builds/winehq.key   
-sudo install -m644 /tmp/winehq.key /etc/apt/keyrings/
+log "=== STEP 1: Configuring Wine repository ==="
 
-# Add repository
-UBUNTU_CODENAME=$(lsb_release -cs)
-cat <<EOF | sudo tee /etc/apt/sources.list.d/winehq.sources
+if ! dpkg --print-foreign-architectures 2>/dev/null | grep -q i386; then
+    log "Adding i386 architecture..."
+    sudo dpkg --add-architecture i386
+    sudo apt update
+fi
+
+if [[ ! -f /etc/apt/keyrings/winehq.key ]]; then
+    log "Adding WineHQ key..."
+    sudo mkdir -p /etc/apt/keyrings
+    wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo tee /etc/apt/keyrings/winehq.key >/dev/null
+fi
+
+REPO_FILE="/etc/apt/sources.list.d/winehq.sources"
+if [[ ! -f "$REPO_FILE" ]]; then
+    log "Adding WineHQ repository..."
+    UBUNTU_CODENAME=$(lsb_release -cs)
+    cat <<EOF | sudo tee "$REPO_FILE" >/dev/null
 Types: deb
-URIs: https://dl.winehq.org/wine-builds/ubuntu   
+URIs: https://dl.winehq.org/wine-builds/ubuntu
 Suites: $UBUNTU_CODENAME
 Components: main
 Architectures: amd64 i386
 Signed-By: /etc/apt/keyrings/winehq.key
 EOF
+    sudo apt update
+fi
 
-sudo apt update
+# ============================================================================
+# 11 – PACKAGE INSTALLATION
+# ============================================================================
 
-########## 4 – Install packages ##########################################
 log "=== STEP 2: Installing packages ==="
 
-# FIX: Install winehq-staging first to ensure we get the right version
-sudo apt install -y --install-recommends "winehq-$WINE_BRANCH" winetricks
+# Install WineHQ if not present
+if ! dpkg -l | grep -q "winehq-$WINE_BRANCH"; then
+    log "Installing WineHQ $WINE_BRANCH..."
+    sudo apt install -y --install-recommends "winehq-$WINE_BRANCH" winetricks
+fi
 
-# Install dependencies including Wine development headers
-sudo apt install -y \
-    pipewire-jack \
-    qjackctl \
-    a2jmidid \
-    curl \
-    git \
-    jq \
-    imagemagick \
-    python3-venv \
-    ffmpeg \
-    lsb-release \
-    build-essential \
-    libasound2-dev \
-    libjack-jackd2-dev \
-    libwine-dev
+get_wine_info  # Refresh after install
 
-# FIX: For minimal mode, stop here with core packages
-if [[ $MINIMAL_MODE == 1 ]]; then
-    log "MINIMAL MODE: Skipping optional audio packages..."
+# Core packages
+CORE_PKGS=(
+    pipewire-jack qjackctl a2jmidid curl git jq imagemagick
+    build-essential libasound2-dev libjack-jackd2-dev libwine-dev unzip
+)
+
+# Wine dev packages
+if [[ "$WINE_VERSION" == *"Staging"* ]]; then
+    CORE_PKGS+=(wine-staging-dev wine-tools)
+elif [[ "$WINE_VERSION" == *"Stable"* ]]; then
+    CORE_PKGS+=(wine-stable-dev wine-tools)
 else
-    # Additional audio tools for full installation
-    sudo apt install -y \
-        jackd2 \
-        carla \
-        catia \
-        ladish
+    CORE_PKGS+=(wine-staging-dev wine-tools)
 fi
 
-########## 5 – Build WineASIO ############################################
-log "=== STEP 3: Building WineASIO $WINEASIO_VERSION ==="
-warn "WineASIO $WINEASIO_VERSION will be built from source using Makefiles"
+install_packages "${CORE_PKGS[@]}"
 
-# Create build directory
-WINEASIO_BUILD_DIR=$(mktemp -d)
-cd "$WINEASIO_BUILD_DIR" || die "Failed to create build directory"
-
-# Clone repository
-log "Cloning WineASIO repository..."
-if ! git clone https://github.com/wineasio/wineasio.git    .; then
-    cd "$HOME"
-    rm -rf "$WINEASIO_BUILD_DIR"
-    die "Failed to clone WineASIO repository"
+# Optional packages
+if [[ $MINIMAL_MODE == 0 ]]; then
+    OPTIONAL_PKGS=()
+    (( $(echo "$UBUNTU_VER >= 24.04" | bc -l) )) || OPTIONAL_PKGS+=(catia ladish)
+    OPTIONAL_PKGS+=(jackd2 carla)
+    install_packages "${OPTIONAL_PKGS[@]}"
 fi
 
-# Check out version
-log "Checking out WineASIO $WINEASIO_VERSION..."
-if ! git checkout "$WINEASIO_VERSION" 2>/dev/null; then
-    warn "Tag $WINEASIO_VERSION not found, building from master"
-fi
+# ============================================================================
+# 12 – WINEASIO INSTALLATION (Enhanced)
+# ============================================================================
 
-# Verify Makefile exists
-if [[ ! -f "Makefile" ]]; then
-    cd "$HOME"
-    rm -rf "$WINEASIO_BUILD_DIR"
-    die "Makefile not found! Repository structure may have changed."
-fi
+log "=== STEP 3: Installing WineASIO $WINEASIO_VERSION ==="
 
-# FIXED: Find and verify Wine headers location
-log "Locating Wine headers..."
-WINE_INCLUDE_PATH=""
+# Determine WineASIO paths
+WINEASIO_DLL="/usr/local/lib/wine/x86_64-windows/wineasio.dll"
+WINEASIO_SO="/usr/local/lib64/wine/wineasio64.dll.so"
 
-# Check common locations for objbase.h
-for path in \
-    "/usr/include/wine/windows" \
-    "/usr/include/wine/wine/windows" \
-    "/usr/include/wine-development/wine/windows" \
-    "/opt/wine-stable/include/wine/windows" \
-    "/opt/wine-staging/include/wine/windows"; do
-    if [[ -f "$path/objbase.h" ]]; then
-        WINE_INCLUDE_PATH="$path"
-        log "✓ Found Wine headers at: $WINE_INCLUDE_PATH"
-        break
-    fi
-done
-
-if [[ -z "$WINE_INCLUDE_PATH" ]]; then
-    warn "Could not locate objbase.h in standard paths"
-    warn "Searching entire system for objbase.h..."
-    WINE_INCLUDE_PATH=$(find /usr/include /opt -name "objbase.h" 2>/dev/null | head -1 | xargs dirname)
+# Option 1: KXStudio repositories (RECOMMENDED)
+if [[ $USE_KXSTUDIO == 1 ]]; then
+    log "Using KXStudio repositories for WineASIO..."
     
-    if [[ -n "$WINE_INCLUDE_PATH" ]]; then
-        log "✓ Found objbase.h at: $WINE_INCLUDE_PATH"
+    if [[ ! -f /etc/apt/sources.list.d/kxstudio-debian.list ]]; then
+        log "Adding KXStudio repository..."
+        wget -q https://launchpad.net/~kxstudio-debian/+archive/kxstudio/+files/kxstudio-repos_10.0.3_all.deb -O /tmp/kxstudio-repos.deb
+        sudo dpkg -i /tmp/kxstudio-repos.deb || true
+        sudo apt update
+    fi
+    
+    if sudo apt install -y wineasio; then
+        log "✓ WineASIO installed from KXStudio"
+        WINEASIO_DLL="/usr/lib/x86_64-linux-gnu/wine/x86_64-windows/wineasio.dll"
+        WINEASIO_SO="/usr/lib/x86_64-linux-gnu/wine/x86_64-unix/wineasio64.dll.so"
     else
-        cd "$HOME"
-        rm -rf "$WINEASIO_BUILD_DIR"
-        die "objbase.h not found! Please ensure libwine-dev is installed correctly."
+        warn "KXStudio WineASIO failed, falling back to build method"
+        USE_KXSTUDIO=0
     fi
 fi
 
-# FIXED: Build with explicit include path and better error handling
-log "Building WineASIO 64-bit..."
-if [[ -n "$WINE_INCLUDE_PATH" && "$WINE_INCLUDE_PATH" != "/usr/include/wine/windows" ]]; then
-    # Add the correct include path to the build
-    log "Adding include path: $WINE_INCLUDE_PATH"
-    export CFLAGS="-I$WINE_INCLUDE_PATH"
-fi
-
-# FIX: Use proper make command with timeout
-if ! timeout "$WINE_TIMEOUT" make 64 2>/dev/null; then
-    # Try alternative make command
-    log "Trying alternative build method..."
-    if ! timeout "$WINE_TIMEOUT" make build ARCH=x86_64 M=64; then
-        cd "$HOME"
-        rm -rf "$WINEASIO_BUILD_DIR"
-        die "Build failed"
+# Option 2: Build from source
+if [[ $USE_KXSTUDIO == 0 ]]; then
+    if [[ -f "$WINEASIO_SO" && $FORCE_REBUILD == 0 ]]; then
+        log "✓ WineASIO already built (use --force-rebuild to override)"
+    else
+        log "Building WineASIO from source..."
+        BUILD_DIR=$(mktemp -d) || die "Failed to create build directory"
+        debug "Build directory: $BUILD_DIR"
+        
+        cd "$BUILD_DIR" || die "Failed to enter build directory"
+        
+        # Clone repository
+        log "Cloning WineASIO repository..."
+        if ! git clone --depth 1 --branch "$WINEASIO_VERSION" https://github.com/wineasio/wineasio.git .; then
+            warn "Tag $WINEASIO_VERSION not found, trying master..."
+            git clone --depth 1 https://github.com/wineasio/wineasio.git . || die "Failed to clone repository"
+        fi
+        
+        # Verify files
+        [[ ! -f "Makefile" || ! -f "wineasio-register" ]] && die "Repository structure invalid"
+        
+        # Find Wine headers
+        WINE_INCLUDE=""
+        for path in "/usr/include/wine/wine/windows" "/usr/include/wine-development/wine/windows" "/usr/include/wine/windows"; do
+            [[ -f "$path/objbase.h" ]] && WINE_INCLUDE="$path" && debug "Found Wine headers at: $WINE_INCLUDE" && break
+        done
+        
+        [[ -z "$WINE_INCLUDE" ]] && die "Wine headers not found. Install wine-staging-dev"
+        
+        # Build
+        export CFLAGS="-I$WINE_INCLUDE"
+        debug "Building with CFLAGS=$CFLAGS"
+        if ! run_with_timeout "$WINE_TIMEOUT" make 64; then
+            cd "$HOME" || true
+            rm -rf "$BUILD_DIR"
+            die "WineASIO build failed. Check logs: $LOG"
+        fi
+        
+        # Verify build
+        [[ ! -f "build64/wineasio64.dll.so" || ! -f "build64/wineasio64.dll" ]] && \
+            die "Build failed: output files not found"
+        
+        # Install
+        log "Installing WineASIO files..."
+        sudo mkdir -p /usr/local/lib/wine/x86_64-windows/ /usr/local/lib64/wine/ /usr/local/bin/
+        sudo cp build64/wineasio64.dll.so "$WINEASIO_SO"
+        sudo cp build64/wineasio64.dll "$WINEASIO_DLL"
+        sudo cp wineasio-register /usr/local/bin/
+        sudo chmod +x /usr/local/bin/wineasio-register
+        
+        # Cleanup
+        cd "$HOME" || true
+        rm -rf "$BUILD_DIR"
+        log "✓ WineASIO built and installed"
     fi
 fi
 
-# Manually install files (no make install target)
-log "Installing WineASIO files..."
+# Verify files
+[[ ! -f "$WINEASIO_DLL" || ! -f "$WINEASIO_SO" ]] && die "WineASIO files missing"
 
-# Create directories
-sudo mkdir -p /usr/local/lib/wine/x86_64-windows/
-sudo mkdir -p /usr/local/lib64/wine/
+# ============================================================================
+# 13 – WINE PREFIX SETUP
+# ============================================================================
 
-# Install DLL
-if [[ -f "build64/wineasio64.dll" ]]; then
-    sudo cp build64/wineasio64.dll /usr/local/lib/wine/x86_64-windows/wineasio.dll
-    log "✓ Installed 64-bit DLL"
-else
-    warn "✗ 64-bit DLL not found at build64/wineasio64.dll"
-fi
-
-# Install .so
-if [[ -f "build64/wineasio64.dll.so" ]]; then
-    sudo cp build64/wineasio64.dll.so /usr/local/lib64/wine/
-    log "✓ Installed 64-bit .so"
-else
-    warn "✗ 64-bit .so not found at build64/wineasio64.dll.so"
-fi
-
-# Install wineasio-register script if it exists
-if [[ -f "wineasio-register" ]]; then
-    sudo cp wineasio-register /usr/local/bin/
-    sudo chmod +x /usr/local/bin/wineasio-register
-    log "✓ Installed wineasio-register script"
-fi
-
-# Cleanup
-cd "$HOME"
-rm -rf "$WINEASIO_BUILD_DIR"
-
-########## 6 – Setup Wine prefix #########################################
 log "=== STEP 4: Setting up Wine prefix ==="
+
 export WINEARCH=win64
 export WINEPREFIX="$PREFIX"
 
-# FIX: Kill any existing Wine processes before creating prefix
+# Kill existing processes
 wineserver -k 2>/dev/null || true
-pkill -f "wineserver" 2>/dev/null || true
 sleep 2
 
-if [[ ! -d "$PREFIX" ]]; then
-    log "Creating new Wine prefix..."
-    # FIX: Use wineboot with timeout and wait for completion
-    timeout "$WINE_TIMEOUT" wineboot --init || warn "wineboot timed out or failed"
-    
-    # Wait for prefix to be ready with timeout
-    for i in {1..60}; do
-        if [[ -f "$PREFIX/system.reg" ]]; then
-            log "✓ Wine prefix created successfully"
-            break
-        fi
-        sleep 1
-    done
-    
-    if [[ ! -f "$PREFIX/system.reg" ]]; then
-        warn "Wine prefix may not be fully initialized"
-    fi
+# Remove existing prefix if forcing reinstall
+if [[ $FORCE_REINSTALL == 1 && -d "$PREFIX" ]]; then
+    log "Removing existing prefix for clean install..."
+    rm -rf "$PREFIX"
 fi
 
-# Configure Wine - use win10 for better compatibility
-winecfg -v win10 2>/dev/null || true
-
-# FIX: Disable Wine crash dialogs for better stability
-log "Disabling Wine crash dialogs..."
-cat > /tmp/disable_wine_dlg.reg <<'EOF'
+# Create prefix if needed
+if [[ ! -d "$PREFIX" ]]; then
+    log "Creating Wine prefix at $PREFIX..."
+    mkdir -p "$PREFIX"
+    
+    run_with_timeout "$WINE_TIMEOUT" wineboot --init || warn "wineboot had minor issues"
+    wait_for_wine_prefix "$PREFIX" 60
+    
+    # Configure Windows version
+    winecfg -v win10 2>/dev/null || true
+    
+    # Disable crash dialogs
+    cat > /tmp/disable_dlg.reg <<'EOF'
 REGEDIT4
-
 [HKEY_CURRENT_USER\Software\Wine\WineDbg]
 "ShowCrashDialog"=dword:00000000
 EOF
-wine regedit /tmp/disable_wine_dlg.reg 2>/dev/null || true
-rm -f /tmp/disable_wine_dlg.reg
+    wine regedit /tmp/disable_dlg.reg 2>/dev/null || true
+    rm -f /tmp/disable_dlg.reg
+    
+    log "✓ Wine prefix created"
+else
+    log "Using existing Wine prefix"
+fi
 
-########## 7 – Install Windows libraries #################################
+# Install Windows runtimes
 log "=== STEP 5: Installing Windows runtime libraries ==="
 
-# FIX: Update winetricks first to minimize SHA256 mismatches
-log "Updating winetricks..."
-sudo winetricks --self-update 2>/dev/null || warn "Failed to update winetricks"
+# Update winetricks if old
+if [[ ! -f ~/.cache/winetricks/lastupdate ]] || [[ $(find ~/.cache/winetricks/lastupdate -mtime +7 2>/dev/null) ]]; then
+    log "Updating winetricks..."
+    sudo winetricks --self-update 2>/dev/null || warn "Could not update winetricks"
+    touch ~/.cache/winetricks/lastupdate
+fi
 
-# FIX: Use --force to bypass SHA256 mismatches for known-good files
 WINETRICKS_OPTS="-q --force"
-WINEPREFIX="$PREFIX" winetricks $WINETRICKS_OPTS vcrun2019 corefonts dxvk
+for runtime in vcrun2019 vcrun2022 corefonts dxvk; do
+    log "Installing $runtime..."
+    if ! WINEPREFIX="$PREFIX" winetricks $WINETRICKS_OPTS "$runtime" 2>/dev/null; then
+        warn "$runtime had minor issues (non-critical)"
+    else
+        debug "✓ $runtime installed"
+    fi
+done
 
-########## 8 – Register WineASIO in Wine prefix ##########################
+# ============================================================================
+# 14 – WINEASIO REGISTRATION (Enhanced with WINEDLLPATH)
+# ============================================================================
+
 log "=== STEP 6: Registering WineASIO ==="
 
-# FIX: Copy WineASIO to the Wine prefix's system32 directory first
-# This is REQUIRED for regsvr32 to find the DLL
-WINEASIO_SYSTEM_DLL="$PREFIX/drive_c/windows/system32/wineasio.dll"
-WINEASIO_SYSTEM_DLL_SO="$PREFIX/drive_c/windows/system32/wineasio.dll.so"
+WINEASIO_DST_DLL="$PREFIX/drive_c/windows/system32/wineasio.dll"
+WINEASIO_DST_SO="$PREFIX/drive_c/windows/system32/wineasio64.dll.so"
 
-log "Copying WineASIO to Wine prefix..."
-if [[ -f "/usr/local/lib/wine/x86_64-windows/wineasio.dll" ]]; then
-    cp "/usr/local/lib/wine/x86_64-windows/wineasio.dll" "$WINEASIO_SYSTEM_DLL"
-    log "✓ Copied DLL to prefix"
+# Copy to prefix
+cp "$WINEASIO_DLL" "$WINEASIO_DST_DLL"
+debug "DLL copied to: $WINEASIO_DST_DLL"
+
+[[ ! -f "$WINEASIO_DST_DLL" ]] && die "Failed to copy WineASIO DLL to prefix"
+
+# Register with multiple methods (using WINEDLLPATH fix)
+log "Registering WineASIO..."
+REG_SUCCESS=0
+
+# Method 1: Direct registration with WINEDLLPATH
+debug "Method 1: Direct registration with WINEDLLPATH..."
+if WINEPREFIX="$PREFIX" WINEDLLPATH="$PREFIX/drive_c/windows/system32" $WINE_CMD regsvr32 "C:\\windows\\system32\\wineasio.dll" 2>&1 | tee -a "$LOG"; then
+    log "✓ WineASIO registered (Method 1)"
+    REG_SUCCESS=1
+fi
+
+# Method 2: wineasio-register script
+if [[ $REG_SUCCESS == 0 && -x /usr/local/bin/wineasio-register ]]; then
+    debug "Method 2: wineasio-register..."
+    if WINEPREFIX="$PREFIX" wineasio-register 2>&1 | tee -a "$LOG"; then
+        log "✓ WineASIO registered (Method 2)"
+        REG_SUCCESS=1
+    fi
+fi
+
+[[ $REG_SUCCESS == 0 ]] && warn "⚠ WineASIO registration may have issues"
+
+# Verify registration
+debug "Verifying WineASIO registration..."
+if WINEPREFIX="$PREFIX" wine reg query "HKCU\\Software\\Wine\\Drivers" /v Audio 2>/dev/null | grep -i asio; then
+    log "✓ WineASIO appears to be registered in Wine registry"
 else
-    die "Source WineASIO DLL not found!"
+    warn "⚠ WineASIO may not be registered properly"
 fi
 
-if [[ -f "/usr/local/lib64/wine/wineasio64.dll.so" ]]; then
-    cp "/usr/local/lib64/wine/wineasio64.dll.so" "$WINEASIO_SYSTEM_DLL_SO"
-    log "✓ Copied .so to prefix"
-else
-    warn "Source WineASIO .so not found, continuing anyway..."
-fi
+# ============================================================================
+# 15 – MANUAL REGISTRY KEY (if provided)
+# ============================================================================
 
-# FIX: Use the wineasio-register script properly
-log "Registering WineASIO in Wine prefix..."
-WINEPREFIX="$PREFIX" wine regsvr32 "C:\\windows\\system32\\wineasio.dll" 2>/dev/null || {
-    warn "Initial registration failed, trying alternative method..."
-    WINEPREFIX="$PREFIX" wine64 regsvr32 "C:\\windows\\system32\\wineasio.dll" 2>/dev/null || true
-}
-
-# Alternative registration method using wineasio-register if available
-if command -v wineasio-register &>/dev/null; then
-    log "Using wineasio-register script..."
-    WINEPREFIX="$PREFIX" WINEDLLPATH="$PREFIX/drive_c/windows/system32" wineasio-register 2>/dev/null || true
-fi
-
-# FIX: Verify registration
-log "Verifying WineASIO registration..."
-if WINEPREFIX="$PREFIX" wine reg query "HKCU\\Software\\Wine\\Drivers" /v Audio 2>/dev/null | grep -q "asio"; then
-    log "✓ WineASIO appears to be registered in Wine"
-else
-    warn "✗ WineASIO may not be registered properly in Wine"
-fi
-
-########## 9 – Manual registry key (if provided) #########################
-# NEW: Support for manual registry key addition
 if [[ -n "$MANUAL_REG_KEY" && -f "$MANUAL_REG_KEY" ]]; then
     log "=== STEP 6.5: Installing manual registry key ==="
     log "Importing: $MANUAL_REG_KEY"
@@ -559,183 +874,389 @@ if [[ -n "$MANUAL_REG_KEY" && -f "$MANUAL_REG_KEY" ]]; then
     }
 fi
 
-########## 10 – Install FL Studio ########################################
+# ============================================================================
+# 16 – INSTALL FL STUDIO
+# ============================================================================
+
 log "=== STEP 7: Installing FL Studio ==="
 INSTALLER_FILE="/tmp/flstudio_installer.exe"
 
-# FIX: Better download handling with retry logic and proper error messages
+# Handle installer source
 if [[ "$INSTALLER_PATH" =~ ^https?:// ]]; then
-    log "Downloading FL Studio installer from: $INSTALLER_PATH"
-    
-    # Check internet connectivity first
-    if ! curl -fsSL --max-time 10 https://www.image-line.com   > /dev/null 2>&1; then
-        warn "Cannot reach Image-Line website. Please check your internet connection."
-        warn "You can manually download the installer and use --installer /path/to/file"
+    if [[ ! -f "$INSTALLER_FILE" || $FORCE_REINSTALL == 1 ]]; then
+        log "Downloading installer from URL (timeout: ${CURL_TIMEOUT}s)..."
+        rm -f "$INSTALLER_FILE"
+        
+        for i in {1..3}; do
+            run_with_timeout "$CURL_TIMEOUT" curl -fSL "$INSTALLER_PATH" -o "$INSTALLER_FILE" && break
+            warn "Download attempt $i failed"
+            sleep 5
+        done
+        
+        [[ ! -f "$INSTALLER_FILE" || ! -s "$INSTALLER_FILE" ]] && die "Failed to download installer after 3 attempts"
+        
+        file_size=$(stat -c%s "$INSTALLER_FILE" 2>/dev/null || echo "0")
+        [[ $file_size -lt 1000000 ]] && die "Downloaded file too small ($file_size bytes)"
+        
+        log "✓ Download complete ($(numfmt --to=iec-i --suffix=B "$file_size"))"
+    else
+        log "Using cached installer"
     fi
-    
-    # Download with retry logic
-    for i in {1..3}; do
-        if curl -fsSL --connect-timeout 30 --max-time 300 "$INSTALLER_PATH" -o "$INSTALLER_FILE"; then
-            # Verify file is not empty
-            if [[ -s "$INSTALLER_FILE" ]]; then
-                log "✓ Download successful"
-                break
+else
+    [[ -f "$INSTALLER_PATH" ]] && INSTALLER_FILE="$INSTALLER_PATH" || die "Installer file not found: $INSTALLER_PATH"
+fi
+
+# Run installer
+log "Launching FL Studio installer GUI..."
+chmod +x "$INSTALLER_FILE"
+WINEPREFIX="$PREFIX" $WINE_CMD "$INSTALLER_FILE" &
+INSTALLER_PID=$!
+sleep 10
+
+INSTALLATION_DETECTED=0
+
+if [[ $NO_TIMEOUT == 1 ]]; then
+    log "Please complete installation wizard (no timeout - press Ctrl+C to abort)..."
+    while kill -0 "$INSTALLER_PID" 2>/dev/null; do
+        if [[ $INSTALLATION_DETECTED == 0 ]]; then
+            if find "$PREFIX/drive_c/Program Files/Image-Line" -name "FL*.exe" 2>/dev/null | grep -q .; then
+                log "✓ FL Studio installation detected (waiting for completion)..."
+                INSTALLATION_DETECTED=1
+            fi
+        fi
+        sleep 10
+    done
+    log "Installer process finished naturally"
+else
+    max_iterations=1440  # 240 minutes max
+    log "Please complete installation wizard (timeout: 240 minutes)..."
+    for i in $(seq 1 $max_iterations); do
+        kill -0 "$INSTALLER_PID" 2>/dev/null || break
+        
+        if [[ $INSTALLATION_DETECTED == 0 ]]; then
+            if find "$PREFIX/drive_c/Program Files/Image-Line" -name "FL*.exe" 2>/dev/null | grep -q .; then
+                log "✓ FL Studio installation detected (waiting for completion)..."
+                INSTALLATION_DETECTED=1
             fi
         fi
         
-        warn "Download attempt $i failed, retrying..."
-        sleep 5
+        sleep 10
     done
     
-    if [[ ! -f "$INSTALLER_FILE" || ! -s "$INSTALLER_FILE" ]]; then
-        # Fallback to manual download message
-        die "Failed to download FL Studio installer after 3 attempts. \
-             \nPlease download manually from: https://www.image-line.com/fl-studio-download/ \
-             \nThen run: ./$(basename "$0") --installer /path/to/downloaded/installer.exe \
-             \nOr use the direct URL pattern: https://install.image-line.com/flstudio/flstudio_win64_VERSION.exe"
+    if kill -0 "$INSTALLER_PID" 2>/dev/null; then
+        warn "Timeout reached, killing installer..."
+        safe_kill "$INSTALLER_PID"
+    fi
+fi
+
+# Wait for background processes
+log "Installer closed. Waiting for background Wine processes to complete..."
+POST_INSTALL_WAIT=300
+for i in $(seq 1 $POST_INSTALL_WAIT); do
+    if pgrep -f "WINEPREFIX=$PREFIX" >/dev/null 2>&1 || pgrep -f "$PREFIX" >/dev/null 2>&1; then
+        [[ $((i % 30)) == 0 ]] && debug "Background processes still running... $i/$POST_INSTALL_WAIT seconds"
+    else
+        log "✓ All background processes finished after $i second(s)"
+        break
+    fi
+    sleep 1
+done
+
+sleep 5
+
+# Save version
+echo "$TARGET_FL_VERSION" > "$PREFIX/flstudio_version.txt"
+
+# ============================================================================
+# 17 – FIND FL STUDIO EXECUTABLE
+# ============================================================================
+
+log "Searching for FL Studio executable..."
+FL_EXE=""
+for path in "$PREFIX/drive_c/Program Files/Image-Line/FL Studio $FL_VERSION/FL64.exe" \
+             "$PREFIX/drive_c/Program Files (x86)/Image-Line/FL Studio $FL_VERSION/FL64.exe"; do
+    [[ -f "$path" ]] && FL_EXE="$path" && log "✓ Found: $path" && break
+done
+
+if [[ -z "$FL_EXE" ]]; then
+    warn "Initial search failed, performing deep search..."
+    FL_EXE=$(find "$PREFIX/drive_c" -name "FL64.exe" -type f 2>/dev/null | head -1)
+    [[ -n "$FL_EXE" ]] && log "✓ Found via deep search: $FL_EXE"
+fi
+
+[[ -z "$FL_EXE" ]] && warn "⚠ Could not find FL64.exe - installation may be incomplete"
+
+# ============================================================================
+# 18 – DESKTOP INTEGRATION & LAUNCHER
+# ============================================================================
+
+log "=== STEP 8: Creating desktop integration ==="
+
+ICON_DIR="$HOME/.local/share/icons"
+DESKTOP_DIR="$HOME/.local/share/applications"
+LAUNCHER_DIR="$HOME/.local/bin"
+
+mkdir -p "$ICON_DIR" "$DESKTOP_DIR" "$LAUNCHER_DIR"
+
+# Remove old files
+rm -f "$LAUNCHER_DIR/flstudio-launcher" "$LAUNCHER_DIR/fl-studio" \
+      "$DESKTOP_DIR/flstudio.desktop" "$ICON_DIR/flstudio.png"
+
+# Extract or create icon
+ICON_PATH="$ICON_DIR/flstudio.png"
+if [[ -n "$FL_EXE" && -f "$FL_EXE" ]]; then
+    if command_exists wrestool && command_exists convert; then
+        if wrestool -x -t 14 "$FL_EXE" 2>/dev/null | convert - -resize 512x512 "$ICON_PATH" 2>/dev/null; then
+            log "✓ Extracted icon from executable"
+        else
+            log "Creating generic icon..."
+            convert -size 512x512 xc:"#FF00FF" -fill white -gravity center -pointsize 96 -annotate 0 "FL" "$ICON_PATH" 2>/dev/null || true
+        fi
+    else
+        log "Creating generic icon..."
+        convert -size 512x512 xc:"#FF00FF" -fill white -gravity center -pointsize 96 -annotate 0 "FL" "$ICON_PATH" 2>/dev/null || true
     fi
 else
-    if [[ -f "$INSTALLER_PATH" ]]; then
-        INSTALLER_FILE="$INSTALLER_PATH"
-        log "Using local installer: $INSTALLER_FILE"
-    else
-        die "Installer not found: $INSTALLER_PATH"
-    fi
+    log "Creating generic icon..."
+    convert -size 512x512 xc:"#FF00FF" -fill white -gravity center -pointsize 96 -annotate 0 "FL" "$ICON_PATH" 2>/dev/null || true
 fi
 
-# FIX: Check if installer is valid (basic check)
-if [[ ! -s "$INSTALLER_FILE" ]]; then
-    die "Installer file is empty or missing: $INSTALLER_FILE"
-fi
+# Create wrapper script
+WRAPPER_SCRIPT="$LAUNCHER_DIR/flstudio-launcher"
+log "Creating launcher script..."
+WINDOWS_EXE_PATH=$(winepath -w "$FL_EXE" 2>/dev/null | sed 's/\\/\//g' || echo "C:/Program Files/Image-Line/FL Studio $FL_VERSION/FL64.exe")
 
-# FIX: Make installer executable and run with timeout
-chmod +x "$INSTALLER_FILE"
-log "Running FL Studio installer (GUI will appear)..."
+cat > "$WRAPPER_SCRIPT" <<'EOWRAPPER'
+#!/bin/bash
+# FL Studio Launcher
 
-# Kill any hanging wine processes before starting installer
-wineserver -k 2>/dev/null || true
+export WINEPREFIX="__PREFIX_PLACEHOLDER__"
+export WINEARCH=win64
+export WINEDEBUG=${WINEDEBUG:--all}
+export BROWSER=${BROWSER:-xdg-open}
+export WINE_DISABLE_MEMORY_MANAGER=1
+export WINE_LARGE_ADDRESS_AWARE=1
+export PIPEWIRE_LATENCY="__BUFFER__/48000"
 
-# Run installer in background and wait for it
-WINEPREFIX="$PREFIX" wine "$INSTALLER_FILE" &
-INSTALLER_PID=$!
+exec __WINE_CMD_PLACEHOLDER__ "__EXE_PATH_PLACEHOLDER__" "$@" 2>/dev/null
+EOWRAPPER
 
-# Wait for installer to start
-sleep 10
+sed -i "s|__PREFIX_PLACEHOLDER__|$PREFIX|g" "$WRAPPER_SCRIPT"
+sed -i "s|__WINE_CMD_PLACEHOLDER__|$WINE_CMD|g" "$WRAPPER_SCRIPT"
+sed -i "s|__EXE_PATH_PLACEHOLDER__|$WINDOWS_EXE_PATH|g" "$WRAPPER_SCRIPT"
+sed -i "s|__BUFFER__|$AUDIO_BUFFER_SIZE|g" "$WRAPPER_SCRIPT"
+chmod +x "$WRAPPER_SCRIPT"
 
-# Monitor the process and show progress
-log "Waiting for installation to complete..."
-log "If the installer GUI doesn't appear, check for error messages above."
-log "Please complete the installation wizard manually."
-
-# FIX: Better wait logic with timeout
-for i in {1..180}; do
-    if ! ps -p $INSTALLER_PID > /dev/null 2>&1; then
-        log "Installer process finished"
-        break
-    fi
+# Create command-line launcher if requested
+if [[ $CREATE_CMD_LAUNCHER == 1 ]]; then
+    CMD_LAUNCHER="$LAUNCHER_DIR/fl-studio"
+    ln -sf "$WRAPPER_SCRIPT" "$CMD_LAUNCHER"
+    debug "✓ Command-line launcher created: fl-studio"
     
-    # Check if FL Studio is installed
-    if [[ -f "$PREFIX/drive_c/Program Files/Image-Line/FL Studio $FL_VERSION/FL64.exe" ]]; then
-        log "✓ FL Studio installation detected"
-        break
-    fi
-    
-    sleep 10
-done
-
-# Kill installer if still running after timeout
-if ps -p $INSTALLER_PID > /dev/null 2>&1; then
-    warn "Installer is still running after 30 minutes. Killing it..."
-    kill $INSTALLER_PID 2>/dev/null || true
-    sleep 5
-    kill -9 $INSTALLER_PID 2>/dev/null || true
-fi
-
-########## 11 – Desktop integration ######################################
-log "=== STEP 8: Creating desktop integration ==="
-ICON_DIR="$HOME/.local/share/icons"
-mkdir -p "$ICON_DIR"
-
-# Try multiple paths for FL Studio icon
-FL_ICON_FOUND=false
-for icon_path in \
-    "$PREFIX/drive_c/Program Files/Image-Line/FL Studio $FL_VERSION/FL.ico" \
-    "$PREFIX/drive_C/Program Files/Image-Line/FL Studio $FL_VERSION/FL.ico" \
-    "$PREFIX/drive_c/Program Files (x86)/Image-Line/FL Studio $FL_VERSION/FL.ico" \
-    "$PREFIX/drive_c/Program Files/Image-Line/FL Studio $FL_VERSION/Resources/FL.ico"; do
-    if [[ -f "$icon_path" ]]; then
-        log "Found FL Studio icon at: $icon_path"
-        convert "$icon_path" -resize 512x512 "$ICON_DIR/flstudio.png" 2>/dev/null && FL_ICON_FOUND=true
-        break
-    fi
-done
-
-if [[ "$FL_ICON_FOUND" != "true" ]]; then
-    warn "Could not find FL Studio icon, using generic icon"
-    # Create a simple placeholder icon
-    convert -size 512x512 xc:purple -fill white -pointsize 48 -gravity center -annotate 0 "FL" "$ICON_DIR/flstudio.png" 2>/dev/null || true
+    # Ensure launcher directory is in PATH so 'fl-studio' command works
+    ensure_path_entry "$LAUNCHER_DIR"
 fi
 
 # Create desktop entry
-DESKTOP_DIR="$HOME/.local/share/applications"
-mkdir -p "$DESKTOP_DIR"
-cat > "$DESKTOP_DIR/flstudio.desktop" <<EOF
+DESKTOP_PATH="$DESKTOP_DIR/flstudio.desktop"
+WM_CLASS="fl64.exe"  # Wine generates lowercase with underscores
+
+cat > "$DESKTOP_PATH" <<EODESKTOP
 [Desktop Entry]
-Name=FL Studio
-Exec=env WINEPREFIX="$PREFIX" wine "C:\\Program Files\\Image-Line\\FL Studio $FL_VERSION\\FL64.exe"
-Icon=flstudio
+Version=1.0
 Type=Application
-Categories=AudioVideo;Audio;Music;
-StartupNotify=true
+Name=FL Studio
+Comment=Digital Audio Workstation (Installed: $(date +%Y-%m-%d))
+Exec=$WRAPPER_SCRIPT %U
+Icon=$ICON_PATH
 Terminal=false
-StartupWMClass=fl64.exe
+Categories=AudioVideo;Audio;Music;Midi;
+Keywords=music;audio;production;daw;flstudio;
+StartupNotify=true
+StartupWMClass=$WM_CLASS
+MimeType=audio/x-flstudio-project;
+
+[Desktop Action KillWine]
+Name=Kill Wine Processes
+Exec=wineserver -k
+
+[Desktop Action ConfigureWine]
+Name=Configure Wine Audio
+Exec=env WINEPREFIX="$PREFIX" winecfg
+EODESKTOP
+
+chmod +x "$DESKTOP_PATH"
+
+# Update desktop database
+update-desktop-database -q "$DESKTOP_DIR" 2>/dev/null || debug "Desktop update returned non-zero"
+xdg-desktop-menu forceupdate 2>/dev/null || debug "xdg-desktop-menu not available"
+
+# Validate desktop entry
+if command_exists desktop-file-validate; then
+    if ! desktop-file-validate "$DESKTOP_PATH" 2>/dev/null; then
+        warn "⚠ Desktop entry validation warnings"
+    fi
+fi
+
+# ============================================================================
+# 19 – BROWSER INTEGRATION (Enhanced)
+# ============================================================================
+
+log "=== STEP 9: Configuring browser integration for licensing ==="
+
+cat > /tmp/flstudio_browser_fix.reg <<'EOF'
+REGEDIT4
+
+; HTTP/HTTPS URL handlers
+[HKEY_CLASSES_ROOT\http]
+@="URL:HyperText Transfer Protocol"
+"URL Protocol"=""
+[HKEY_CLASSES_ROOT\http\shell]
+[HKEY_CLASSES_ROOT\http\shell\open]
+[HKEY_CLASSES_ROOT\http\shell\open\command]
+@="winebrowser \"%1\""
+
+[HKEY_CLASSES_ROOT\https]
+@="URL:HyperText Transfer Protocol Secure"
+"URL Protocol"=""
+[HKEY_CLASSES_ROOT\https\shell]
+[HKEY_CLASSES_ROOT\https\shell\open]
+[HKEY_CLASSES_ROOT\https\shell\open\command]
+@="winebrowser \"%1\""
+
+; Image-Line specific handler
+[HKEY_CLASSES_ROOT\image-line]
+@="URL:Image-Line Protocol"
+"URL Protocol"=""
+[HKEY_CLASSES_ROOT\image-line\shell]
+[HKEY_CLASSES_ROOT\image-line\shell\open]
+[HKEY_CLASSES_ROOT\image-line\shell\open\command]
+@="winebrowser \"%1\""
+
+; Default browser setting
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice]
+"ProgId"="https"
+
+[HKEY_CURRENT_USER\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice]
+"ProgId"="https"
+
+; File associations
+[HKEY_CLASSES_ROOT\.htm]
+@="htmlfile"
+[HKEY_CLASSES_ROOT\.html]
+@="htmlfile"
+
+[HKEY_CLASSES_ROOT\htmlfile\shell\open\command]
+@="winebrowser \"%1\""
+
+; Ensure winebrowser is the default browser
+[HKEY_LOCAL_MACHINE\Software\Wine\Browser]
+"BROWSER"="winebrowser"
 EOF
 
-update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+# Import registry settings
+WINEPREFIX="$PREFIX" regedit /tmp/flstudio_browser_fix.reg 2>&1 || warn "Registry import had issues"
+rm -f /tmp/flstudio_browser_fix.reg
 
-# Skip optional features in minimal mode
+# Verify winebrowser exists
+WINE_BROWSER="$PREFIX/drive_c/windows/syswow64/winebrowser.exe"
+[[ ! -f "$WINE_BROWSER" ]] && WINE_BROWSER="$PREFIX/drive_c/windows/system32/winebrowser.exe"
+[[ -f "$WINE_BROWSER" ]] && debug "✓ winebrowser.exe found" || warn "winebrowser.exe not found"
+
+# ============================================================================
+# 20 – HIDE BROKEN WEBVIEW2 TABS (if requested)
+# ============================================================================
+
+if [[ $HIDE_BROKEN_TABS == 1 ]]; then
+    log "=== STEP 9.5: Hiding broken WebView2 tabs ==="
+    
+    cat > /tmp/hide_broken_tabs.reg <<'EOF'
+REGEDIT4
+
+; Hide SOUNDS, HELP, and GOPHER tabs that require WebView2
+[HKEY_CURRENT_USER\Software\Image-Line\FL Studio\24\Content]
+"ShowSoundsTab"=dword:00000000
+"ShowHelpTab"=dword:00000000
+"ShowGopherTab"=dword:00000000
+
+; Alternative registry path for older versions
+[HKEY_CURRENT_USER\Software\Image-Line\FL Studio\21\Content]
+"ShowSoundsTab"=dword:00000000
+"ShowHelpTab"=dword:00000000
+"ShowGopherTab"=dword:00000000
+EOF
+    
+    WINEPREFIX="$PREFIX" regedit /tmp/hide_broken_tabs.reg 2>/dev/null || warn "Could not hide broken tabs"
+    rm -f /tmp/hide_broken_tabs.reg
+fi
+
+# ============================================================================
+# 21 – OPTIONAL FEATURES (Minimal mode check)
+# ============================================================================
+
 if [[ $MINIMAL_MODE == 1 ]]; then
-    log "MINIMAL MODE: Skipping optional post-installation steps..."
-    log "FL Studio installation complete!"
+    log "MINIMAL MODE: Skipping optional features..."
+    log "=== INSTALLATION COMPLETE ==="
     log "Next steps: Configure audio settings in FL Studio to use WineASIO"
     exit 0
 fi
 
-########## 12 – Install Yabridge #########################################
+# ============================================================================
+# 22 – YABRIDGE INSTALLATION
+# ============================================================================
+
 if [[ $ENABLE_YABRIDGE == 1 ]]; then
-    log "=== STEP 9: Installing Yabridge ==="
+    log "=== STEP 10: Installing Yabridge ==="
     
-    YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest   )
-    YABRIDGE_URL=$(echo "$YABRIDGE_INFO" | jq -r '.assets[] | select(.name | test("tar\\.gz$")) | .browser_download_url' | head -1)
-    
-    if [[ -n "$YABRIDGE_URL" && "$YABRIDGE_URL" != "null" ]]; then
-        YABRIDGE_TMP=$(mktemp -d)
-        curl -fsSL "$YABRIDGE_URL" -o "$YABRIDGE_TMP/yabridge.tar.gz"
-        tar -xzf "$YABRIDGE_TMP/yabridge.tar.gz" -C "$YABRIDGE_TMP"
-        
-        mkdir -p ~/.local/bin
-        cp "$YABRIDGE_TMP"/yabridge-*/{yabridge,yabridgectl} ~/.local/bin/
-        chmod +x ~/.local/bin/{yabridge,yabridgectl}
-        
-        rm -rf "$YABRIDGE_TMP"
-        
-        # Setup and sync
-        yabridgectl add "$PREFIX"
-        yabridgectl sync
-        
-        log "Yabridge installed and synced"
+    if command_exists yabridgectl && [[ $FORCE_REINSTALL == 0 ]]; then
+        log "Yabridge already installed"
     else
-        warn "Could not find Yabridge download URL"
+        YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest)
+        YABRIDGE_URL=$(echo "$YABRIDGE_INFO" | jq -r '.assets[] | select(.name | test("tar\\.gz$")) | .browser_download_url' | head -1)
+        
+        if [[ -z "$YABRIDGE_URL" || "$YABRIDGE_URL" == "null" ]]; then
+            warn "Could not find Yabridge download URL"
+        else
+            debug "Yabridge URL: $YABRIDGE_URL"
+            TMPDIR=$(mktemp -d)
+            
+            if curl -fsSL "$YABRIDGE_URL" -o "$TMPDIR/yabridge.tar.gz"; then
+                if tar -xzf "$TMPDIR/yabridge.tar.gz" -C "$TMPDIR"; then
+                    YABRIDGE_BIN=$(find "$TMPDIR" -name "yabridge" -type f -executable | head -1)
+                    YABRIDGECTL_BIN=$(find "$TMPDIR" -name "yabridgectl" -type f -executable | head -1)
+                    
+                    if [[ -n "$YABRIDGE_BIN" && -n "$YABRIDGECTL_BIN" ]]; then
+                        mkdir -p ~/.local/bin
+                        cp "$YABRIDGE_BIN" "$YABRIDGECTL_BIN" ~/.local/bin/
+                        chmod +x ~/.local/bin/yabridge ~/.local/bin/yabridgectl
+                        ~/.local/bin/yabridgectl add "$PREFIX" 2>/dev/null
+                        ~/.local/bin/yabridgectl sync 2>/dev/null
+                        log "✓ Yabridge installed and synced"
+                    else
+                        warn "Yabridge binaries not found after extraction"
+                    fi
+                else
+                    warn "Failed to extract Yabridge"
+                fi
+            else
+                warn "Failed to download Yabridge"
+            fi
+            rm -rf "$TMPDIR"
+        fi
     fi
 fi
 
-########## 13 – Setup a2jmidid ###########################################
+# ============================================================================
+# 23 – MIDI BRIDGE (a2jmidid)
+# ============================================================================
+
 if [[ $ENABLE_LOOPMIDI == 1 ]]; then
-    log "=== STEP 10: Setting up a2jmidid MIDI bridge ==="
+    log "=== STEP 11: Setting up a2jmidid MIDI bridge ==="
     
     if [[ $ENABLE_SYSTEMD == 1 ]]; then
         mkdir -p ~/.config/systemd/user
-        cat > ~/.config/systemd/user/a2jmidid.service <<EOF
+        
+        cat > ~/.config/systemd/user/a2jmidid.service <<'EOF'
 [Unit]
 Description=ALSA to JACK MIDI bridge
 After=pipewire-pulse.service
@@ -749,68 +1270,84 @@ RestartSec=5
 [Install]
 WantedBy=default.target
 EOF
-        log "a2jmidid service created"
+        
+        systemctl --user daemon-reload
+        log "✓ MIDI service created (enable with: systemctl --user enable a2jmidid)"
+    else
+        log "✓ MIDI bridge available (run manually: a2jmidid -e)"
     fi
 fi
 
-########## 14 – Install MCP stack ########################################
+# ============================================================================
+# 24 – MCP STACK INSTALLATION
+# ============================================================================
+
 if [[ $ENABLE_MCP == 1 ]]; then
-    log "=== STEP 11: Installing MCP stack ==="
+    log "=== STEP 12: Installing MCP stack ==="
     
-    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh   "
+    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh"
     TMP_MCP_SCRIPT=$(mktemp)
     
     if curl -fsSL "$MCP_INSTALL_URL" -o "$TMP_MCP_SCRIPT"; then
         chmod +x "$TMP_MCP_SCRIPT"
         MCP_USE_VENV=1 bash "$TMP_MCP_SCRIPT"
         rm -f "$TMP_MCP_SCRIPT"
+        log "✓ MCP stack installed"
     else
         warn "Failed to download MCP installer"
     fi
 fi
 
-########## 15 – Install n8n ##############################################
+# ============================================================================
+# 25 – n8n INSTALLATION
+# ============================================================================
+
 if [[ $ENABLE_N8N == 1 ]]; then
-    log "=== STEP 12: Installing n8n ==="
+    log "=== STEP 13: Installing n8n ==="
     
     if ! command -v n8n &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_18.x    | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
         sudo apt install -y nodejs
     fi
     
     sudo npm install -g n8n n8n-nodes-mcp-client
+    log "✓ n8n installed"
 fi
 
-########## 16 – Setup Ollama #############################################
+# ============================================================================
+# 26 – OLLAMA SETUP
+# ============================================================================
+
 if [[ $ENABLE_OLLAMA == 1 ]]; then
-    log "=== STEP 13: Setting up Ollama ==="
+    log "=== STEP 14: Setting up Ollama ==="
     
     if ! command -v ollama &>/dev/null; then
-        curl -fsSL https://ollama.com/install.sh    | sh
+        curl -fsSL https://ollama.com/install.sh | sh
     fi
     
-    if [[ "$OLLAMA_MODEL" != "qwen3:14b" ]]; then
+    if [[ "$OLLAMA_MODEL" != "hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL" ]]; then
         ollama pull "$OLLAMA_MODEL"
     fi
     
-    mkdir -p ~/.local/bin
     cat > ~/.local/bin/ollama-mcp <<'EOF'
 #!/bin/bash
-# Ollama MCP shim
-export OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:14b}"
+export OLLAMA_MODEL="${OLLAMA_MODEL:-hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL}"
 ollama run "$OLLAMA_MODEL" "$@"
 EOF
     chmod +x ~/.local/bin/ollama-mcp
     
-    # Add to PATH
+    # Add to PATH if needed
     if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
         echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
     fi
 fi
 
-########## 17 – Create assistant configs #################################
+# ============================================================================
+# 27 – ASSISTANT CONFIGS (Continue.ai & Cursor)
+# ============================================================================
+
 if [[ $ENABLE_CONTINUE == 1 ]]; then
-    log "=== STEP 14: Creating Continue.ai configs ==="
+    log "=== STEP 15: Creating Continue.ai configs ==="
     
     mkdir -p ~/.continue/assistants
     
@@ -859,28 +1396,33 @@ if [[ $ENABLE_CURSOR == 1 ]]; then
 EOF
 fi
 
-########## 18 – PipeWire tweaks ##########################################
+# ============================================================================
+# 28 – PIPEWIRE TWEAKS
+# ============================================================================
+
 if [[ $TWEAK_PIPEWIRE == 1 ]]; then
-    log "=== STEP 15: Applying PipeWire low-latency tweaks ==="
-    
-    warn "PipeWire mode enabled - WineASIO compatibility issues are possible"
-    warn "For professional audio work, consider using JACK2 instead"
+    log "=== STEP 16: Applying PipeWire low-latency tweaks ==="
+    warn "PipeWire mode is experimental - JACK2 is strongly recommended for production"
     
     mkdir -p ~/.config/pipewire/pipewire.conf.d
     cat > ~/.config/pipewire/pipewire.conf.d/90-lowlatency.conf <<EOF
-# Low latency configuration for FL Studio
 stream.properties = {
-    node.latency = 128/48000
-    node.rate = 48000
+    node.latency = $AUDIO_BUFFER_SIZE/$AUDIO_SAMPLE_RATE
+    node.rate = $AUDIO_SAMPLE_RATE
 }
 EOF
     
-    systemctl --user restart pipewire pipewire-pulse 2>/dev/null || true
+    systemctl --user restart pipewire pipewire-pulse 2>/dev/null || \
+        warn "PipeWire restart failed (changes will apply after reboot)"
+    log "✓ PipeWire tweaks applied"
 fi
 
-########## 19 – Patchbay template ########################################
+# ============================================================================
+# 29 – PATCHBAY TEMPLATE
+# ============================================================================
+
 if [[ $PATCHBAY == 1 ]]; then
-    log "=== STEP 16: Creating patchbay template ==="
+    log "=== STEP 17: Creating QJackCtl patchbay template ==="
     
     mkdir -p ~/.config/rncbc.org/QjackCtl/patches
     cat > ~/.config/rncbc.org/QjackCtl/patches/flstudio.xml <<EOF
@@ -896,13 +1438,17 @@ if [[ $PATCHBAY == 1 ]]; then
   </patch>
 </jack-patchbay>
 EOF
+    log "✓ Patchbay template created"
 fi
 
-########## 20 – Setup systemd services ###################################
+# ============================================================================
+# 30 – SYSTEMD SERVICES
+# ============================================================================
+
 if [[ $ENABLE_SYSTEMD == 1 ]]; then
-    log "=== STEP 17: Setting up systemd services ==="
+    log "=== STEP 18: Setting up systemd services ==="
     
-    loginctl enable-linger "$USER"
+    loginctl enable-linger "$USER" 2>/dev/null || warn "Could not enable linger"
     
     UDIR=~/.config/systemd/user
     mkdir -p "$UDIR"
@@ -930,7 +1476,7 @@ EOF
     if [[ $ENABLE_LOOPMIDI == 1 ]]; then
         cat > "$UDIR/a2jmidid.service" <<EOF
 [Unit]
-Description=ALSA to JACK MIDI bridge
+Description=ALSA to JACK MIDI Bridge
 After=pipewire-pulse.service
 
 [Service]
@@ -982,25 +1528,32 @@ WantedBy=default.target
 EOF
     fi
     
-    # Enable and start services
+    # Enable and start
     systemctl --user daemon-reload
-    
     for service in flstudio-mcp a2jmidid n8n ollama; do
         if [[ -f "$UDIR/${service}.service" ]]; then
-            log "Enabling service: $service"
+            log "Enabling ${service}.service"
             systemctl --user enable --now "${service}.service" 2>/dev/null || warn "Failed to start $service"
         fi
     done
 fi
 
-########## 21 – FL Studio registry tweaks ################################
+# ============================================================================
+# 31 – FL STUDIO REGISTRY TWEAKS
+# ============================================================================
+
 if [[ $DISABLE_FL_UPDATES == 1 ]]; then
-    log "=== STEP 18: Disabling FL Studio auto-update ==="
+    log "=== STEP 19: Disabling FL Studio auto-update dialog ==="
     
     cat > /tmp/fl_disable_updates.reg <<'EOF'
 REGEDIT4
 
 [HKEY_CURRENT_USER\Software\Image-Line]
+"AutoUpdate"=dword:00000000
+"CheckForUpdates"=dword:00000000
+"LastUpdateCheck"=dword:00000000
+
+[HKEY_CURRENT_USER\Software\Image-Line\FL Studio]
 "AutoUpdate"=dword:00000000
 "CheckForUpdates"=dword:00000000
 EOF
@@ -1009,108 +1562,133 @@ EOF
     rm -f /tmp/fl_disable_updates.reg
 fi
 
-########## 22 – Cleanup Wine processes ###################################
-# FIX: Kill any remaining wine processes to prevent hanging
-log "Cleaning up Wine processes..."
+# ============================================================================
+# 32 – FINAL CLEANUP & VERIFICATION
+# ============================================================================
+
+log "=== STEP 20: Final cleanup and verification ==="
+
+# Kill any remaining Wine processes
 wineserver -k 2>/dev/null || true
+sleep 2
 
-########## 23 – Verification #############################################
-log "=== STEP 19: Running verification ==="
+# Verification
+log "=== VERIFICATION SUMMARY ==="
 
-# Check WineASIO installation
-WINEASIO_DLL_INSTALLED=false
-WINEASIO_SO_INSTALLED=false
+ALL_GOOD=1
 
-if [[ -f "/usr/local/lib/wine/x86_64-windows/wineasio.dll" ]]; then
-    log "✓ WineASIO 64-bit DLL installed"
-    WINEASIO_DLL_INSTALLED=true
+# Check WineASIO files
+if [[ -f "$WINEASIO_DLL" && -f "$WINEASIO_SO" ]]; then
+    log "✓ WineASIO files installed"
 else
-    warn "✗ WineASIO 64-bit DLL NOT found!"
+    warn "✗ WineASIO files missing"
+    ALL_GOOD=0
 fi
 
-if [[ -f "/usr/local/lib64/wine/wineasio64.dll.so" ]]; then
-    log "✓ WineASIO 64-bit .so installed"
-    WINEASIO_SO_INSTALLED=true
-else
-    warn "✗ WineASIO 64-bit .so NOT found!"
-fi
-
-# Check WineASIO registration
-log "Checking WineASIO registration..."
+# Check registration
 if WINEPREFIX="$PREFIX" wine reg query "HKCU\\Software\\Wine\\Drivers" /v Audio 2>/dev/null | grep -i asio; then
-    log "✓ WineASIO appears to be registered in Wine"
+    log "✓ WineASIO registered in Wine"
 else
-    warn "✗ WineASIO may not be registered properly in Wine"
-    log "To manually register, run:"
-    log "WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\wineasio.dll"
+    warn "✗ WineASIO not registered"
+    ALL_GOOD=0
 fi
 
-# Check FL Studio installation
-FL_EXE="$PREFIX/drive_c/Program Files/Image-Line/FL Studio $FL_VERSION/FL64.exe"
-if [[ -f "$FL_EXE" ]]; then
+# Check FL Studio executable
+if [[ -n "$FL_EXE" && -f "$FL_EXE" ]]; then
     log "✓ FL Studio executable found"
 else
-    warn "✗ FL Studio executable not found (may need to complete installation manually)"
+    warn "✗ FL Studio executable not found"
+    ALL_GOOD=0
 fi
 
-########## 24 – Final instructions #######################################
-log "=== INSTALLATION COMPLETE ==="
-log ""
-log "================ IMPORTANT CONFIGURATION STEPS ================"
-log ""
-
-if [[ "$WINEASIO_DLL_INSTALLED" == "true" && "$WINEASIO_SO_INSTALLED" == "true" ]]; then
-    log "✅ WineASIO installed successfully!"
+# Check launcher
+if [[ -x "$WRAPPER_SCRIPT" ]]; then
+    log "✓ Launcher script created"
 else
-    log "⚠️  WineASIO installation may have issues - see warnings above"
+    warn "✗ Launcher script not executable"
+    ALL_GOOD=0
 fi
 
-log "1. FL Studio should now be available in your applications menu"
-log "2. Wine prefix location: $PREFIX"
-log ""
-
-if [[ -n "$MANUAL_REG_KEY" ]]; then
-    log "3. Registry key imported: $MANUAL_REG_KEY"
-    log "   You should now be able to run FL Studio without activation prompts"
-    log ""
+# Check desktop entry
+if [[ -f "$DESKTOP_PATH" ]]; then
+    log "✓ Desktop entry created"
+else
+    warn "✗ Desktop entry missing"
+    ALL_GOOD=0
 fi
 
-if [[ $ENABLE_SYSTEMD == 1 ]]; then
-    log "3. User services enabled and will start on login"
-    log "   Check status: systemctl --user status flstudio-mcp"
-    log ""
+# Check command-line launcher
+if [[ $CREATE_CMD_LAUNCHER == 1 ]]; then
+    if [[ -L "$LAUNCHER_DIR/fl-studio" ]]; then
+        log "✓ Command-line launcher 'fl-studio' created"
+    else
+        warn "✗ Command-line launcher not created"
+    fi
 fi
 
-log "4. AUDIO SETUP IN FL STUDIO (CRITICAL):"
-log "   - Open FL Studio"
-log "   - Go to Options > Audio Settings"
-log "   - Select 'WINEASIO' as the device"
-log "   - Set buffer size to 128 or 256 for low latency"
-log "   - If WineASIO doesn't appear, restart FL Studio or run step 5"
+# ============================================================================
+# 33 – FINAL INSTRUCTIONS
+# ============================================================================
+
+log ""
+log "════════════════════════════════════════════════════════════════"
+log "              FL STUDIO INSTALLATION COMPLETE!"
+log "════════════════════════════════════════════════════════════════"
 log ""
 
-log "5. If WineASIO doesn't appear in FL Studio:"
-log "   Run: WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\wineasio.dll"
+if [[ $ALL_GOOD == 1 ]]; then
+    log "✅ All critical components installed successfully!"
+else
+    log "⚠️ Installation completed with some issues - see warnings above"
+fi
+
+log "🎵 NEXT STEPS:"
+log "1. Launch FL Studio from your applications menu"
+log "2. OR run from command line: ~/.local/bin/flstudio-launcher"
+[[ $CREATE_CMD_LAUNCHER == 1 ]] && log "   OR simply: fl-studio"
+log "3. OR run: WINEPREFIX=\"$PREFIX\" wine \"C:\\Program Files\\Image-Line\\FL Studio $FL_VERSION\\FL64.exe\""
 log ""
 
-log "6. For PipeWire users (Ubuntu 24.04+):"
-log "   - WineASIO may crash due to PipeWire sandboxing"
-log "   - Solution: Use JACK2 instead:"
-log "     sudo apt install jackd2"
-log "     Start JACK with: qjackctl"
-log "     Then start FL Studio"
+log "🎚️ AUDIO CONFIGURATION (CRITICAL):"
+log "1. Open FL Studio"
+log "2. Go to Options > Audio Settings"
+log "3. Select 'WINEASIO' as the device"
+log "4. Set Sample Rate: $AUDIO_SAMPLE_RATE Hz"
+log "5. Set Buffer Size: $AUDIO_BUFFER_SIZE samples"
+log "6. If WineASIO doesn't appear, restart FL Studio or run:"
+log "   WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\ineasio.dll"
 log ""
 
-log "7. To run FL Studio manually:"
-log "   WINEPREFIX=\"$PREFIX\" wine \"C:\\Program Files\\Image-Line\\FL Studio $FL_VERSION\\FL64.exe\""
+log "🌐 LICENSING & ACTIVATION:"
+log "• Browser integration is configured for Image-Line account login"
+log "• If browser doesn't open, check winebrowser.exe configuration"
 log ""
 
-log "8. Troubleshooting audio crackling:"
-log "   - Increase buffer size in FL Studio Audio Settings"
-log "   - Or use: WINEDEBUG=-all wine ... (to silence debug output)"
+log "🐛 TROUBLESHOOTING:"
+log "• Full log: $LOG"
+log "• Wine prefix: $PREFIX"
+log "• Kill Wine: wineserver -k"
+log "• Test launch: ~/.local/bin/flstudio-launcher"
 log ""
 
-# FIX: Final cleanup to prevent hanging
-wineserver -k 2>/dev/null || true
+log "⚡ PERFORMANCE TIPS:"
+log "• Use JACK2 instead of PipeWire for best audio performance"
+log "• Increase buffer size if you experience audio dropouts"
+log "• Consider using --tweak-pipewire on Ubuntu 24.04+"
+log ""
+
+log "🗑️ UNINSTALL:"
+log "• Keep projects: ./flstudio_setup.sh --uninstall"
+log "• Full cleanup: ./flstudio_setup.sh --uninstall-full"
+log ""
+
+log "📂 USER DATA LOCATION:"
+log "• Projects: ~/Documents/Image-Line/FL Studio"
+log "• Settings: $PREFIX"
+log ""
+
+log "════════════════════════════════════════════════════════════════"
+log "🎉 Enjoy making music with FL Studio on Linux!"
+log "════════════════════════════════════════════════════════════════"
 
 exit 0

@@ -1,29 +1,34 @@
 # FL Studio on Linux — One-Command Installer/Updater & Optional AI-Ready Tool‑chain
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
-![Release](https://img.shields.io/badge/release-stable-green.svg)
-![Wine](https://img.shields.io/badge/wine-staging|stable-orange.svg)
-![FL Studio Compatibility](https://img.shields.io/badge/FL%20Studio%20Compatability-<12|21|>25-purple.svg)
-![FL_STUDIO_LATEST_VERSION=](https://img.shields.io/badge/Latest%20FL%20Studio%20Version-25.1.6.4997-yellow.svg)
-![License](https://img.shields.io/badge/license-MIT-lightgrey.svg)
+![Version](https://img.shields.io/badge/version-2.0.0-blue.svg )
+![Release](https://img.shields.io/badge/release-production-green.svg )
+![Wine](https://img.shields.io/badge/wine-staging%20|%20stable-orange.svg)
+![FL Studio Compatibility](https://img.shields.io/badge/FL%20Studio%20Versions-<12%20|21+%20|%2025+%20-purple.svg)
+![FL_STUDIO_LATEST_VERSION=](https://img.shields.io/badge/Latest%20FL%20Studio%20Version-25.2.0.5125-yellow.svg )
+![License](https://img.shields.io/badge/license-MIT-lightgrey.svg )
 
 **TL;DR** Run a single configurable one-shot shell script or command to get:
 
-* **AI-capable (or any vanilla version) of `FL Studio Running on Linux!`** (auto-downloads the [latest FL Studio installer](https://install.image-line.com/flstudio/flstudio_win64_25.1.6.4997.exe) or uses your already downloaded .exe installation file)
-* Wine 9‑staging **or** *stable* (you choose via `--wine`) + `WineASIO` + `Winetricks` to make [FL Studio](https://www.image-line.com/fl-studio) work at full capacity on Linux
-* Automatic 32bit architecture enabled for older FL Studio components
+* **AI-capable (or any vanilla version) of `FL Studio Running on Linux!`** (auto-downloads the [latest FL Studio installer](https://install.image-line.com/flstudio/flstudio_win64_25.2.0.5125.exe ) or uses your already downloaded .exe installation file)
+* Wine 10.x **staging** or **stable** (you choose via `--wine`) + `WineASIO` + `Winetricks` to make [FL Studio](https://www.image-line.com/fl-studio ) work at full capacity on Linux
+* Automatic 32bit architecture enabled for older FL Studio and third party VST components
 * `Yabridge` for Windows `VST`/`VST3`/`CLAP` plugins
 * `PipeWire`/`JACK` low‑latency audio *and* an `ALSA` ↔ `JACK` *LoopMIDI‑style* bridge (`a2jmidid`)
-* **Additional and Unofficial AI-ready toolchain**: My fork of the community‑maintained [**flstudio‑mcp**](https://github.com/BenevolenceMessiah/flstudio-mcp) server, plus optional [**n8n**](https://n8n.io/), [**Ollama**](https://ollama.com/), [**Continue**](https://www.continue.dev/) and [**Cursor**](https://cursor.com/) endpoints for (unofficial) [MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol) AI integration!
+* **Additional and Unofficial AI-ready toolchain**: My fork of the community‑maintained [**flstudio‑mcp**](https://github.com/BenevolenceMessiah/flstudio-mcp ) server, plus optional [**n8n**](https://n8n.io/ ), [**Ollama**](https://ollama.com/ ), [**Continue**](https://www.continue.dev/ ) and [**Cursor**](https://cursor.com/ ) endpoints for (unofficial) [MCP](https://en.wikipedia.org/wiki/Model_Context_Protocol ) AI integration!
 * Automatic Installation and updates for `flstudio‑mcp`, `n8n` and MCP node and `Ollama` MCP file, all the Linux dependencies, graphics, and runtimes components, etc., and `FL Studio` itself
 * Auto‑generated **Continue** MCP assistant YAML files (safe even if you still use the old `config.json`) auto‑generated **Ollama** MCP assistant, auto‑generated **n8n** MCP assistant, auto-generated **Cursor** MCP assistant.
 * Optional user-level systemd services so everything starts at login **and survives logout** via `loginctl enable-linger`
-* One-command **uninstaller** (`--uninstall`) that removes packages, Wine prefix, user services, and desktop entries
+* One-command **uninstaller** (`--uninstall` and `--uninstall-full`) that removes packages, Wine prefix, user services, and desktop entries, and even project files if you so desire (`--uninstall-full`)
 * Automatic FL Studio icon integration with GNOME/KDE menus **and** optional registry tweak (`--disable-fl-updates`) to silence the auto-update popup
+* **PATH Launcher** Add the `--path` command line argument to the installation in order to be able to launch FL Studio from the terminal via `fl-studio` command.
+* **WebView2 workaround** with `--hide-broken` flag to disable non-functional tabs
+* **Project preservation** during uninstall with `--preserve-projects`
 
 Re‑run the script/command any time with the same command line flags — it upgrades everything in place.
 
 **Don't own FL Studio?** Not a problem! This script installs the official installer - FL Studio's Trial Mode will allow you to play with pretty much the full program; the main limitation is that you can't reopen your saved projects.
+
+![FL Studio on Linux Overview](assets/image-1.png)
 
 ---
 
@@ -53,44 +58,46 @@ Re‑run the script/command any time with the same command line flags — it upg
 
 ```bash
 # minimal install (FL Studio + WineASIO only) - fastest option for basic setup
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --no-features
+```
 
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- --no-features
+Prior to running this, it is advisable to read onward, specifically as it concerns additional parameters and command line flags. Append your installation command accordingly. I personally like to add the `--path` argument in order to be able to additionally launch FL Studio from the CLI using the `fl-studio` command:
+
+```bash
+# minimal install (FL Studio + WineASIO + PATH integration only) - fastest option for basic setup
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --no-features --path
 ```
 
 ### Recommended for Users Who Already Have the FL Studio .exe File
 
 This method is useful if you're using an older version of FL Studio for compatibility and you already have the installer locally on the computer.
 
-Simply point the installer script to your installer file (`--installer`) and (optionally) to a reg key file (`--reg`) - you can always unlock FL Studio the recommended/normal way once the program is up and running so the `--reg` command line flag is completely optional when using the `--installer` command line flag.
+Simply point the installer script to your installer file via (`--installer`) and (optionally) to a reg key file (`--reg`) - you can always unlock FL Studio the recommended/normal way once the program is up and running so the `--reg` command line flag is completely optional when using the `--installer` command line flag.
 
 Notably, the `--installer` command line argument also accepts `URLs` in the event you need to pull a version-specific `.exe` file from ImageLine servers directly. This means you could also use any URL or remote server location where an FL Studio installer .exe file hosted/backed up.
 
 ```bash
-# minimal install with offline installation and activation
-
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- --no-features --installer /absolute/path/to/flstudio.exe --reg /absolute/path/to/flstudio.reg
+# minimal install with offline/URL installation and activation
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --no-features --installer /absolute/path/to/flstudio.exe --reg /absolute/path/to/flstudio.reg
 ```
 
 ### Examples for Users Seeking Advanced AI Features and Options
 
 ```bash
 # lean install (Wine + Yabridge + MCP + LoopMIDI bridge) + autostart services - (recommended if you already have VS Code and the Continue Extension installed)
-
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- --systemd
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --systemd
 ```
 
 ```bash
 # full installation with all AI features and services and multiple (unnecessary?) AI endpoints and integrations
-
 ENABLE_N8N=1 ENABLE_OLLAMA=1 ENABLE_CURSOR=1 \
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- \
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- \
   --systemd
 ```
 
 ```bash
 # custom installation with specific components
-
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- \
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- \
   --installer /absolute/path/to/flstudio_win_21_1_99.exe \
   --reg /absolute/path/to/flstudio.reg \
   --wine stable \
@@ -102,13 +109,30 @@ curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/m
 
 ### **Notes 1:**
 
-1. *The first run takes \~5–10 minutes depending on bandwidth and what you chose to install; subsequent runs only fetch updates.* It is a very ugly/glitchy looking install. I deeply apologize for that - but this script is 1,117 lines long presently. This is like the world's most difficult program to integrate with Ubuntu.
+1. *The first run takes \~5–20 minutes depending on bandwidth, what you chose to install, and what you already have installed; subsequent runs only fetch updates.* I have significantly cleaned up the aesthetic and verbosity of the script. This script is 1,600+ lines long presently, and the base installation should work fine. DAWs are notoriously difficult to set up on Linux.
 2. *If you're using a pre-downloaded EXE file for FL Studio, make sure you edit the file location via `--installer` when you paste the command. You can optionally add `--reg` for your reg key file too at this point or you can manually unlock inside of FL Studio*
 3. The script **auto‑downloads the latest FL Studio installer** if you omit `--installer`.
 4. *Read on for all available command line arguments and features!*
 5. Tested with installing for `Current User`. I suggest this is what you do too.
-6. Registering/Unlocking FL Studio is still a bit wonky in `version 1.0.0` but you have a few options (either using the offline .reg file and using the `--reg` command line argument or using the file unlock option via the FL Studio authentication dialog (recommended)).
+6. Registering/Unlocking FL Studio is still a bit wonky in `version 2.0.0` but you have a few options (either using the offline .reg file and using the `--reg` command line argument or using the file unlock option via the FL Studio authentication dialog (recommended)).
 7. The MCP and AI integrations are all experimental and largely untested. Your results may vary!
+8. If you receive any network errors or timeouts, it's moat likely due to a slow/flaky internet connection - the script is designed to stop hangups, so if it exits during a download of the installer from ImageLine, add `--no-timeout` as a command line argument to your installation i.e.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --no-features --path --no-timeout
+```
+
+9. Add `--path` as a command line argument if you want to be able to launch FL Studio directly from any terminal.
+10. I have not tested `FL Cloud Plugins` they should work though, but note that (as I recall), the current ImageLine policy is that you get 3x Cloud Plugins installations per FL Studio subscription. I don't recommend installing the FL Cloud Plugins unless you plan to make this FL Studio Ubuntu installation one of your main DAW installations.
+11. Recommended GUI settings:
+
+![GUI Settings](assets/image-2.png)
+![GUI Settings 2](assets/image-3.png)
+![GUI Settings 3](assets/image-4.png)
+
+12. Recommended registration method:
+
+![Registration](assets/image-5.png)
 
 ---
 
@@ -144,13 +168,13 @@ This script wires everything necessary together *idempotently*: every section ch
 ### 1. One‑liner (`curl | bash`)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- --systemd
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --systemd
 ```
 
 -Or- (for vanilla FL Studio)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh  | bash -- --no-features
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --no-features --path
 ```
 
 Pros: fastest; always gets the latest script.
@@ -158,10 +182,10 @@ Pros: fastest; always gets the latest script.
 ### 2. Local clone
 
 ```bash
-git clone https://github.com/BenevolenceMessiah/flstudio_setup.git 
+git clone https://github.com/BenevolenceMessiah/flstudio_setup.git  
 cd flstudio_setup
 chmod +x flstudio_setup.sh
-./flstudio_setup.sh --installer /path/to/flstudio.exe --n8n --systemd
+./flstudio_setup.sh --installer /path/to/flstudio.exe --n8n --systemd --path
 ```
 
 Pros: you can read or patch the script first for your specific use cases; commits are versioned.
@@ -179,7 +203,7 @@ lowest latency. Thus, using either above method is certainly preferred over the 
 * If you do use Docker, it's suggested you use Docker Desktop.
 
 ```bash
-git clone https://github.com/BenevolenceMessiah/flstudio_setup.git 
+git clone https://github.com/BenevolenceMessiah/flstudio_setup.git  
 cd flstudio_setup/docker
 docker compose build  # ARG WINE_BRANCH=staging or stable
 xhost +local:docker   # allow GUI forwarding
@@ -199,105 +223,135 @@ docker compose run --rm flstudio
 
 | Switch / Var                          | Default                     | Description                                                                  |
 | ------------------------------------- | --------------------------- | ---------------------------------------------------------------------------- |
-| `--installer <file\|URL>`          | *(auto‑detected)*           | Path or HTTPS URL to the FL Studio installer (ENV: `INSTALLER_PATH=`)        |
+| `--installer <file\|URL>`          | *(auto‑detected)*           | Path or HTTPS URL to FL Studio installer (ENV: `INSTALLER_PATH=`)            |
 | `--wine <stable\|staging>`            | `staging`                   | Choose Wine branch (ENV: `WINE_BRANCH=`)                                     |
-| `--ollama-model <tag>`                | `qwen3:14b`                 | Default model for Ollama MCP shim (ENV: `OLLAMA_MODEL=`)                     |
-| `--no-mcp`                            | 1                           | Skip **flstudio-mcp**, n8n node, Ollama shim, Cursor YAML and Continue YAML. |
-| `--no-continue`                       | 1                           | Don't write `~/.continue/assistants/*.yaml`.                                 |
-| `--no-loopmidi`                       | 1                           | Skip installing `a2jmidid`.                                                  |
-| `--no-yabridge`                       | 1                           | Skip Yabridge install/sync.                                                  |
-| `--no-features`                       | 0                           | **MINIMAL MODE**: Only install FL Studio + WineASIO (disables all optional features) |
-| `--reg <file>`                        | —                           | Manually add registry key (e.g., FLRegkey.reg for offline activation)        |
-| `--n8n`                               | 0                           | Install/upgrade Node 18 LTS, n8n and the MCP‑Client node.                    |
-| `--ollama`                            | 0                           | Install or update Ollama and add an MCP shim.                                |
-| `--cursor`                            | 0                           | Add Cursor‑style MCP YAML to `~/.cursor/`.                                   |
-| `--systemd`                           | 0                           | Create **user‑level** services for MCP, a2jmidid, n8n, Ollama.               |
-| `--tweak-pipewire`                    | 0                           | Apply low-latency PipeWire preset.                                           |
-| `--patchbay`                          | 0                           | Write QJackCtl/Carla patchbay template.                                      |
-| `--disable-fl-updates`                | 0                           | Turn off FL-Studio auto-update dialog.                                       |
-| `--uninstall`                         | —                           | Remove all packages, Wine prefix, user services, icons, assistants.          |
-| `--help`, `-h`                        | —                           | Show help message and exit.                                                  |
+| `--sample-rate <rate>`                | `48000`                     | Audio sample rate in Hz (ENV: `AUDIO_SAMPLE_RATE=`)                         |
+| `--buffer-size <size>`                | `256`                       | Audio buffer size in samples (ENV: `AUDIO_BUFFER_SIZE=`)                     |
+| `--ollama-model <tag>`                | `hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL`                 | Default model for Ollama MCP shim (ENV: `OLLAMA_MODEL=`)                     |
+| `--no-mcp`                            | 0                           | Skip flstudio-mcp installation                                               |
+| `--no-continue`                       | 0                           | Skip Continue.ai assistant files                                             |
+| `--no-loopmidi`                       | 0                           | Skip a2jmidid bridge installation                                            |
+| `--no-yabridge`                       | 0                           | Skip Yabridge installation/sync                                              |
+| `--no-features`                       | 0                           | **MINIMAL MODE**: Only FL Studio + WineASIO (disables all optional features) |
+| `--no-systemd`                        | 0                           | Skip systemd services (when systemd would otherwise be enabled)              |
+| `--tweak-pipewire`                    | 0                           | Apply PipeWire low-latency tweaks                                            |
+| `--patchbay`                          | 0                           | Create QJackCtl patchbay template                                            |
+| `--disable-fl-updates`                | 0                           | Disable FL Studio auto-update dialog                                         |
+| `--use-kxstudio`                      | 0                           | Use KXStudio repositories for WineASIO                                       |
+| `--reg <file>`                        | —                           | Manual registry key file (e.g., FLRegkey.reg)                                |
+| `--hide-broken`                       | 0                           | Hide broken WebView2 tabs (SOUNDS, HELP, GOPHER)                             |
+| `--preserve-projects`                 | 0                           | Always preserve project files during uninstall                               |
+| `--path`                              | 0                           | Create 'fl-studio' command-line launcher                                     |
+| `--force-reinstall`                   | 0                           | Force reinstall even if version matches                                      |
+| `--force-rebuild`                     | 0                           | Rebuild WineASIO from source                                                 |
+| `--no-timeout`                        | 0                           | Disable installer timeout                                                    |
+| `--verbose\|-v`                       | 0                           | Enable detailed debug output                                                 |
+| `--n8n`                               | 0                           | Install n8n workflow engine                                                  |
+| `--ollama`                            | 0                           | Install Ollama                                                               |
+| `--cursor`                            | 0                           | Create Cursor MCP config                                                     |
+| `--systemd`                           | 0                           | Create systemd services for all enabled features                             |
+| `--uninstall`                         | —                           | Remove installation (keeps user data)                                        |
+| `--uninstall-full`                    | —                           | Remove installation AND all user data                                        |
+| `--update`                            | —                           | Update all components to latest versions                                     |
+| `--help\|-h`                          | —                           | Show help message and exit                                                   |
 
 ### Environment Variables
 
-| Variable               | Default | Description |
-| ---------------------- | ------- | ----------- |
-| `INSTALLER_PATH`       | Auto-detect | Override installer source |
-| `WINE_BRANCH`          | `staging` | Override Wine branch |
-| `OLLAMA_MODEL`         | `qwen3:14b` | Override Ollama model |
-| `PREFIX`               | `$HOME/.wine-flstudio` | Custom Wine prefix location |
+| Variable               | Default                           | Description |
+| ---------------------- | --------------------------------- | ----------- |
+| `INSTALLER_PATH`       | Auto-detect latest version        | Override installer source |
+| `WINE_BRANCH`          | `staging`                         | Override Wine branch |
+| `OLLAMA_MODEL`         | `hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL`                       | Override Ollama model |
+| `PREFIX`               | `$HOME/.wine-flstudio`            | Override Wine prefix location |
+| `AUDIO_SAMPLE_RATE`    | `48000`                           | Override audio sample rate |
+| `AUDIO_BUFFER_SIZE`    | `256`                             | Override audio buffer size |
+| `MANUAL_REG_KEY`       | —                                 | Override registry key file path |
+| `WINE_TIMEOUT`         | `900`                             | Override Wine operations timeout |
+| `CURL_TIMEOUT`         | `600`                             | Override download timeout |
+| `WINEDEBUG`            | `-all`                            | Override Wine debug level |
+| `PRESERVE_PROJECTS`    | `0`                               | Preserve projects on uninstall (set to `1`) |
+| `VERBOSE`              | `0`                               | Enable verbose logging |
 
 ### **Notes 2:**
 
-* If --installer is not set, the script will automatically download the latest version of FL Studio, effectively: --installer 'https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe'.
+* If `--installer` is not set, the script will automatically download the latest version of FL Studio.
 * Environment variables override script defaults; flags override both.
 * The `--no-features` flag enables minimal mode, installing only the core components (FL Studio + Wine + WineASIO)
 * Use `--reg` to import offline registration keys for FL Studio activation
+* Use `--preserve-projects` to keep your music projects safe during uninstall
+* Use `--force-reinstall` to force a clean reinstall of FL Studio
+* Use `--force-rebuild` to rebuild WineASIO from source code
 
 ---
 
 ## What the Script Actually Does
 
-### 1. Full system upgrade
+### 0. Full system upgrade
 
 Runs `sudo apt update && sudo apt upgrade -y` before anything else.
 
-### 2. Wine 9‑staging repository & key
+### 1. Wine repository setup
 
-Places `winehq.key` in `/etc/apt/keyrings` and a `.sources` file in `/etc/apt/sources.list.d/` to satisfy modern APT.
+Adds i386 architecture, downloads WineHQ key to `/etc/apt/keyrings`, and creates modern `.sources` file in `/etc/apt/sources.list.d/`.
 
-### 3. Core package install / update
+### 2. Core packages
 
-* **Wine32/64 + Winetricks** – helper for Windows DLLs.
-* **WineASIO** – JACK → ASIO bridge.
-* **PipeWire‑JACK, qjackctl** – user‑space JACK router.
-* **a2jmidid** (optional) – ALSA ↔ JACK loopback.
-* CLI helpers: `curl`, `git`, `jq`, `imagemagick`, `python3-venv`.
+* **WineHQ** (staging or stable) + Winetricks
+* **WineASIO** (v1.3.0) - either from KXStudio repos or built from source
+* **Build tools**: `build-essential`, `libasound2-dev`, `libjack-jackd2-dev`, `libwine-dev`
+* **Audio**: `pipewire-jack`, `qjackctl`, `a2jmidid`
+* **CLI helpers**: `curl`, `git`, `jq`, `imagemagick`
 
-### 4. Wine prefix bootstrap
+### 3. Wine prefix bootstrap
 
-`WINEPREFIX=~/.wine-flstudio` is created once; subsequent runs leave your plugins intact.
+Creates `WINEPREFIX=~/.wine-flstudio` with Windows 10 compatibility mode and disabled crash dialogs.
 
-### 5. Winetricks runtime libraries
+### 4. Winetricks runtime libraries
 
-`vcrun2019`, `corefonts`, `dxvk` **quietly** installed (or skipped if present).
+Installs `vcrun2019`, `vcrun2022`, `corefonts`, `dxvk` quietly.
 
-### 6. FL Studio installer execution
+### 5. FL Studio installation
 
-The EXE is *always* run under Wine; GUI prompts appear as on Windows.
+Downloads and executes the FL Studio installer via Wine GUI wizard. Supports both automatic download and local/URL installer sources.
 
-### 7. Desktop integration
+### 6. WineASIO registration
 
-Extracts `FL.ico` into a 512×512 PNG and writes `flstudio.desktop` so it shows up in GNOME/KDE menus.
+Copies DLLs to prefix and registers with multiple fallback methods. Verifies registry entries.
 
-### 8. **Yabridge**
+### 7. Desktop integration
 
-Downloads the latest binary tarball, installs to `~/.local/bin/`, then runs `yabridgectl sync`—which also checks Wine compatibility.
+Extracts icon from executable or creates generic icon, generates `flstudio.desktop` with additional actions (Kill Wine, Configure Wine).
 
-### 9. LoopMIDI bridge (`a2jmidid -e`)
+### 8. Command-line launcher
 
-Exports every ALSA sequencer port into JACK *and* PipeWire so FL Studio sees "a2j" ports exactly like loopMIDI on Windows.
+Optionally creates `~/.local/bin/fl-studio` symlink for terminal usage.
 
-### 10. MCP stack *(if enabled)*
+### 9. Browser integration
 
-| Component                    | Purpose                                                                               |
-| ---------------------------- | ------------------------------------------------------------------------------------- |
-| **flstudio-mcp**             | Python stdio server exposing playlist, mixer & transport over MCP.                    |
-| **n8n MCP node**             | Drag‑and‑drop workflows that call MCP tools.                                          |
-| **Ollama shim**              | Wrapper mapping `ask` → `ollama run qwen3:14b` (edit to choose another model). |
-| **Continue assistants YAML** | Auto‑discovered by Continue.                                                          |
-| **Cursor YAML**              | Optional snippet for Cursor's MCP side‑panel.                                         |
+Configures Wine registry to handle HTTP/HTTPS URLs and Image-Line specific protocols via winebrowser.
 
-### 11. Systemd user services *(if enabled)*
+### 10. Yabridge
 
-Placed in `~/.config/systemd/user/` and started immediately:
+Downloads latest release, installs to `~/.local/bin/`, runs `yabridgectl sync` for VST plugin compatibility.
 
-| Unit                   | Condition           | Purpose                                       |
-| ---------------------- | ------------------- | --------------------------------------------- |
-| `flstudio-mcp.service` | `ENABLE_MCP=1`      | Auto‑start the FL‑Studio MCP server on login. |
-| `a2jmidid.service`     | `ENABLE_LOOPMIDI=1` | Creates ALSA ↔ JACK loopback ports.           |
-| `n8n.service`          | `ENABLE_N8N=1`      | Runs the n8n workflow engine on port 5678.    |
-| `ollama.service`       | `ENABLE_OLLAMA=1`   | Keeps Ollama's local LLM server running.      |
+### 11. LoopMIDI bridge (`a2jmidid -e`)
+
+Creates ALSA ↔ JACK MIDI bridge, optionally as systemd service.
+
+### 12. MCP stack
+
+Installs **flstudio-mcp** Python server, **n8n** workflow engine, **Ollama** LLM server with MCP shim, and generates assistant configs for **Continue** and **Cursor**.
+
+### 13. Optional features
+
+* **PipeWire tweaks**: Low-latency configuration
+* **Patchbay template**: QJackCtl connection presets
+* **FL registry tweaks**: Disable updates, hide broken WebView2 tabs
+* **Systemd services**: Auto-start all components on login
+
+### 14. Verification
+
+Comprehensive post-install checks for WineASIO files, registration, FL Studio executable, and desktop integration.
 
 ---
 
@@ -368,7 +422,7 @@ finished WAV** inside FL Studio—all headless, hands-free and cross-platform.
 ### Ollama shim
 
 * Location: `~/.local/bin/ollama-mcp`
-* Default LLM: **\`$OLLAMA_MODEL\`** (defaults to `qwen3:14b`, can be overridden with `--ollama-model llama3` or `OLLAMA_MODEL=phi3`).
+* Default LLM: **\`$OLLAMA_MODEL\`** (defaults to `hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL`, can be overridden with `--ollama-model llama3` or `OLLAMA_MODEL=phi3`).
 * Swap models any time:
 
   ```bash
@@ -384,93 +438,92 @@ Placing YAML files under `~/.continue/assistants/` is the *official* way to add 
 
 ## Updating, Re‑running & Uninstalling
 
+Updating may work directly via FL Studio as it does in Windows - FL Studio module downloads seem to work just fine, and the launcher should automatically run on exit in the Wine Prefix; I have not tested this though.
+
 | Action                 | Command                                                                                                                                                                                           |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Upgrade everything** | Rerun `flstudio_setup.sh` with the same flags.                                                                                                                                                    |
 | **Minimal reinstall**  | Use `--no-features` for core components only                                                                                                                                                      |
+| **Update mode**        | `./flstudio_setup.sh --update` to force update all components                                                                                                                                     |
 | **Disable a service**  | `systemctl --user disable --now flstudio-mcp.service`                                                                                                                                             |
-| **Remove everything**  | Run with `--uninstall` flag to remove all components, or manually delete `~/.wine-flstudio`, `~/.local/share/flstudio-mcp`, any `~/.config/systemd/user/*.service` units, and the desktop file. |
+| **Remove everything**  | `./flstudio_setup.sh --uninstall` to remove packages while keeping projects                                                                                                                       |
+| **Full destruction**   | `./flstudio_setup.sh --uninstall-full` to remove EVERYTHING including projects                                                                                                                    |
+
+### Recommended Command for Updates (If you Cannot Update Manually via FL Studio)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/BenevolenceMessiah/flstudio_setup/main/flstudio_setup.sh   | bash -- --force-reinstall --force-rebuild --no-features --path
+```
 
 ---
 
 ## Current Issues and Limitations
 
+While the core features of FL Studio are fully functional, there are some limitations and known issues.
+
 ### Known Limitations and Issues
 
-1. **WineASIO Registration Warning**
+1. **WineASIO Registration Warning, MIDI Warnings**
    - **Issue**: "RegSvr32 error: regsvr32: Failed to load DLL '/usr/local/lib/wine/x86_64-windows/wineasio.dll'"
    - **Status**: Non-blocking - Wine's library paths have changed across versions
-   - **Workaround**: ASIO for FL Studio installs correctly during FL Studio installation and is fully functional. Use "FL Studio ASIO" as your audio device in FL Studio settings (it should already be default).
+   - **Workaround**: this can be ignored. `FL Studio ASIO` installs correctly during FL Studio installation and is fully functional. Use "FL Studio ASIO" as your audio device in FL Studio settings (it should already be default). You may also get MIDI warnings. As far as I can tell, these are also benign and can generally be ignored
 
 2. **Browser Integration Issues**
    - **Issue**: FL Studio's Windows ShellExecute calls fail under Wine due to missing browser associations
-   - **Status**: Only affects browser-based FL Studio activation
-   - **Workaround**: Use offline registration (`--reg` flag) or file-based authentication through FL Studio's built-in dialog (easier and recommended anyway)
+   - **Status**: Only affects browser-based FL Studio activation and external links
+   - **Workaround**: Use offline registration (`--reg` flag) or file-based authentication through FL Studio's built-in dialog (recommended), navigate to the FL forums manually in your web browser
 
 3. **WebView2 Black Screens**
-   - **Issue**: SOUNDS, HELP, and GOPHER tabs display as black screens
+   - **Issue**: `SOUNDS`, `HELP`, and `GOPHER` menu tabs display as black screens
    - **Cause**: FL Studio uses Microsoft Edge WebView2 (Chromium-based) which has broken rendering in Wine
-   - **Status**: Known WineHQ AppDB limitation, not script-related
-   - **Workaround**: These tabs are non-functional but core FL Studio features work perfectly
+   - **Status**: Known WineHQ AppDB limitation, not script-related, and something I do not have control over - this is on Microsoft/WineHQ to fix
+   - **Workaround**: Use `--hide-broken` flag to hide these tabs, or ignore them (core FL Studio features work perfectly as far as I can tell). This is probably the biggest issue if you directly get samples via browsing in FL Studio, use Gopher, or rely on the help menu. Again, unfortunately, there's not really a foreseeable way to fix this.
 
 4. **Icon Detection False Warning**
    - **Issue**: Script may show icon detection warnings during installation
-   - **Status**: False positive - fallback icon generation works correctly
-   - **Workaround**: Ignore the warning - FL Studio desktop entry and icon are created successfully
+   - **Status**: False positive - fallback icon generation works correctly - you should see FL Studio registered in your App Menu, and you should also see a shortcut on your desktop.
+   - **Workaround**: Ignore the warning - FL Studio desktop entry and icon are created successfully (let me know if you experience anything otherwise)
 
 5. **Inability for Wine to see certain Hard Drives**
-   - **Issue**: Wine/Windows File Explorer emulation does not seem to see certain hard drives. I'm not sure why this is.
-   - **Status**: May effect you if you're using project files or VSTs on another hard rive. I noticed it on an NTFS NVME m.2 solid state drive.
-   - **Workaround**: Copy these directories/files manually to a hard drive that FL Studio can see.
+   - **Issue**: Wine/Windows File Explorer emulation does not seem to see certain hard drives (this seems to be specific to solid state drives)
+   - **Status**: May affect you if using project files or VSTs on another drive or are attempting to use System Links
+   - **Workaround**: Copy these directories/files manually to a location FL Studio can see
 
 ### Audio-Specific Considerations
 
-- **PipeWire vs JACK**: WineASIO works best with native JACK2. PipeWire's JACK implementation may cause stability issues.
-- **Low Latency**: For best performance, use `--tweak-pipewire` or install JACK2 separately
+- **PipeWire vs JACK**: WineASIO works best with native JACK2. PipeWire's JACK implementation may cause stability issues on Ubuntu 24.04+.
+- **Low Latency**: For best performance, use `--tweak-pipewire` or install JACK2 separately: `sudo apt install jackd2`
 - **Buffer Settings**: Start with 128-256 buffer size in FL Studio Audio Settings
+- **KXStudio Alternative**: Use `--use-kxstudio` for alternative WineASIO repository
 
 ---
 
 ## Roadmap and Future Updates
 
-### Next Version (v1.1.0) Planned Features
+- **WineASIO Registration**: Uses WINEDLLPATH environment variable to solve regsvr32 DLL loading errors (Broken)
+- **Browser Integration**: Configures Wine URL handlers to use winebrowser.exe routing to xdg-open (Broken)
 
-#### 🚀 Core Improvements
+### Current Version (v2.0.0) Features
 
-- **Enhanced Idempotency**: Every major step will check if work is already done before executing
-- **User Data Preservation**: `--uninstall` will preserve `~/Documents/Image-Line/` and prompt before destructive actions
-- **New `--uninstall-full`**: Complete clean uninstall option for fresh starts
-- **Auto-Update Detection**: Script will detect installed vs latest versions and prompt for updates
+- **Enhanced Idempotency**: Every major step checks if work is already done before executing
+- **User Data Preservation**: `--uninstall` preserves `~/Documents/Image-Line/` and prompts before destructive actions
+- **Auto-Update Detection**: Script detects installed vs latest versions and prompts for updates
 - **New `--update` Flag**: Force update all components to latest versions
-
-#### 🔧 Technical Fixes
-
-- **WineASIO Registration**: Use WINEDLLPATH environment variable to solve regsvr32 DLL loading errors
-- **Browser Integration**: Configure Wine URL handlers to use winebrowser.exe routing to xdg-open
-- **Improved Icon Detection**: Enhanced search paths to prevent false "not found" warnings
-- **WebView2 Workaround**: New `--hide-broken` flag to optionally hide non-functional SOUNDS, HELP, and GOPHER tabs via registry
-
-#### 🛡️ Enhanced Reliability
-
-- **Comprehensive Error Handling**: Better verification steps and user prompts for major decisions
-- **Network Resilience**: Improved download retry logic and fallback sources
-- **Dependency Management**: Smarter package detection and conflict resolution
-- **Logging Enhancement**: More detailed installation logs for troubleshooting
-
-#### 🎛️ New Features
-
-- **Audio Backend Selection**: Choose between PipeWire, JACK2, or ALSA during installation
-- **Plugin Management**: Enhanced yabridge and Windows VST management tools
-- **Performance Profiles**: Pre-configured settings for gaming, production, or battery use
-- **Backup/Restore**: Save and restore FL Studio configurations and projects
+- **WebView2 Workaround**: New `--hide-broken` flag to optionally hide non-functional tabs via registry
+- **Project Preservation**: New `--preserve-projects` flag for uninstall safety
+- **Command Launcher**: New `--path` flag to create `fl-studio` terminal command
+- **Force Options**: New `--force-reinstall` and `--force-rebuild` flags
+- **No Timeout**: New `--no-timeout` flag for manual installation control
+- **Verbose Mode**: New `-v/--verbose` flag for detailed debugging
 
 ### Long-term Vision
 
 - **Native .deb/.rpm Packages**: Distribution-specific packages for easier installation
 - **Flatpak Support**: Sandboxed installation option
-- **GUI Frontend**: Graphical interface for non-technical users
 - **Plugin Marketplace**: Curated collection of Wine-compatible VST plugins
 - **More AI Model Integration**: Pre-trained music generation models specifically for FL Studio workflows
+- **Network Audio**: Support for networked audio interfaces and remote VST hosting
+- **Support Multiple simultaneous Installations of FL Studio**: Add options for additional instalaltions of different FL Studio versions
 
 ---
 
@@ -483,8 +536,12 @@ Placing YAML files under `~/.continue/assistants/` is the *official* way to add 
 | VSTs missing in host              | Run `yabridgectl sync`; ensure Wine and yabridge match.      |
 | ALSA device not visible in JACK   | Check `systemctl --user status a2jmidid`.                    |
 | Ollama says "model not found"     | `ollama pull <model>` then edit `~/.local/bin/ollama-mcp`.   |
-| Black screens in FL Studio tabs   | Known WebView2 limitation - use alternative methods for sounds/help |
+| Black screens in FL Studio tabs   | Use `--hide-broken` flag or ignore them (non-critical)       |
 | WineASIO not in audio devices     | Restart FL Studio or manually register: `WINEPREFIX="$PREFIX" wine regsvr32 C:\\windows\\system32\\wineasio.dll` |
+| Installation timeout              | Use `--no-timeout` flag for manual control                   |
+| Force rebuild WineASIO            | Use `--force-rebuild` flag                                   |
+| Preserve projects on uninstall    | Use `--uninstall --preserve-projects`                        |
+| Full destructive uninstall        | Use `--uninstall-full` (removes everything)                  |
 
 ### Common Solutions
 
@@ -505,6 +562,11 @@ Placing YAML files under `~/.continue/assistants/` is the *official* way to add 
 2. Restart FL Studio
 3. Check JACK connections with `catia` or `qjackctl`
 
+**Problem**: Can't see external drives
+**Solution**: Mount drives in a location FL Studio can access or copy files to home directory
+
+---
+
 ## Credits & License
 
 * **Script and Docs:** © 2025 Benevolence Messiah (MIT).
@@ -520,7 +582,7 @@ It should go without saying, but I'll mention here:
 
 - I am in no way affiliated with ImageLine or FL Studio; this script is not officially endorsed in any capacity by ImageLine or any mentioned third party - it is simply a community resource for people who want to run FL Studio on Linux.
 
-- This script is a hodgepodge of wrapping, additional resources, substituion, and years of combing best practices of running FL Studio on Ubuntu. It isn't guaranteed to work (but the basic `--no-features` install should work just fine for Ubuntu at least and the script should be future proofed because all of the hard stuff is taken care of).
+- This script is a hodgepodge of wrapping, additional resources, substitution, and years of combing best practices of running FL Studio on Ubuntu. It isn't guaranteed to work (but the basic `--no-features` install should work just fine for Ubuntu at least and the script should be future proofed because all of the hard stuff is taken care of).
 
 - I don't know when/if Wine will fix the issue with Microsoft Edge WebView2 - as such the HELP, SOUNDS, and GOPHER tabs do not work currently.
 
