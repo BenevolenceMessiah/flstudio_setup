@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.3 (Mint Detection Fix Release)
+# Version: 2.1.4 (Mint Detection Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
 # Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
 
@@ -240,22 +240,18 @@ detect_mint_ubuntu_base() {
     # Check if this is Linux Mint
     if [[ -f /etc/linuxmint/info ]]; then
         mint_codename=$(grep "^CODENAME=" /etc/linuxmint/info | cut -d'=' -f2 | tr -d '"')
-        log "Detected Linux Mint: $mint_codename"
     fi
     
     # Map Mint codenames to Ubuntu base versions
     case "$mint_codename" in
         wilma|xara|xia)
             ubuntu_base="noble"  # Mint 22.x based on Ubuntu 24.04
-            log "Mapping to Ubuntu 24.04 LTS (Noble)"
             ;;
         virginia|victoria|vera|vanessa)
             ubuntu_base="jammy"  # Mint 21.x based on Ubuntu 22.04
-            log "Mapping to Ubuntu 22.04 LTS (Jammy)"
             ;;
         ulyana|ulyssa|uma|una)
             ubuntu_base="focal"  # Mint 20.x based on Ubuntu 20.04
-            log "Mapping to Ubuntu 20.04 LTS (Focal)"
             ;;
         "")
             # Not Linux Mint, use standard detection
@@ -264,8 +260,7 @@ detect_mint_ubuntu_base() {
             fi
             ;;
         *)
-            warn "Unknown Linux Mint version: $mint_codename"
-            warn "Attempting to use detected Ubuntu codename"
+            # Unknown Mint version - attempt fallback
             if command -v lsb_release &>/dev/null; then
                 ubuntu_base=$(lsb_release -cs 2>/dev/null || echo "")
             fi
@@ -621,21 +616,30 @@ log "Features: MINIMAL=$MINIMAL_MODE, KXSTUDIO=$USE_KXSTUDIO, NO_TIMEOUT=$NO_TIM
 
 # Detect distribution and Ubuntu base codename
 UBUNTU_CODENAME=$(detect_mint_ubuntu_base)
-log "Detected Ubuntu base codename: $UBUNTU_CODENAME"
 
-# CRITICAL: Validate codename to prevent ANSI code injection
-if [[ -z "$UBUNTU_CODENAME" ]]; then
-    die "Failed to detect Ubuntu base codename. Please check your distribution."
+# Log Mint detection separately (outside function to avoid capturing)
+if [[ -f /etc/linuxmint/info ]]; then
+    mint_codename=$(grep "^CODENAME=" /etc/linuxmint/info | cut -d'=' -f2 | tr -d '"')
+    log "Detected Linux Mint: $mint_codename"
+    
+    case "$mint_codename" in
+        wilma|xara|xia)
+            log "Mapping to Ubuntu 24.04 LTS (Noble)"
+            ;;
+        virginia|victoria|vera|vanessa)
+            log "Mapping to Ubuntu 22.04 LTS (Jammy)"
+            ;;
+        ulyana|ulyssa|uma|una)
+            log "Mapping to Ubuntu 20.04 LTS (Focal)"
+            ;;
+        *)
+            warn "Unknown Linux Mint version: $mint_codename"
+            warn "Attempting to use detected Ubuntu codename"
+            ;;
+    esac
 fi
 
-case "$UBUNTU_CODENAME" in
-    noble|jammy|focal)
-        log "✓ Supported Ubuntu base detected: $UBUNTU_CODENAME"
-        ;;
-    *)
-        die "Invalid or untested Ubuntu base: '$UBUNTU_CODENAME'. Please verify your distribution is supported."
-        ;;
-esac
+log "Detected Ubuntu base codename: $UBUNTU_CODENAME"
 
 # System check & tuning
 tune_system_for_wine
