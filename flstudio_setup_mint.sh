@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.8 (Mint Detection Fix Release)
+# Version: 2.1.9 (Mint Detection Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
 # Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
 
@@ -200,7 +200,8 @@ install_packages() {
     local -a packages=("$@")
     for pkg in "${packages[@]}"; do
         debug "Installing: $pkg"
-        if sudo apt install -y "$pkg" 2>/dev/null; then
+        # Add --allow-downgrades and force non-interactive frontend
+        if sudo DEBIAN_FRONTEND=noninteractive apt install -y --allow-downgrades "$pkg" 2>/dev/null; then
             debug "✓ $pkg installed"
         else
             warn "✗ Failed to install $pkg (may be optional)"
@@ -732,6 +733,12 @@ if (( $(echo "$UBUNTU_VER >= 24.04" | bc -l) )); then
     warn "Ubuntu $UBUNTU_VER detected - PipeWire may cause WineASIO issues"
     warn "Recommended: sudo apt install jackd2 && use JACK instead of PipeWire"
 fi
+
+# Pre-configure JACK2 to prevent whiptail menu freezes in Mint
+# ============================================================================
+log "Pre-configuring JACK2 to avoid terminal menu..."
+echo "jackd2 jackd/tweak_rt_limits boolean true" | sudo debconf-set-selections 2>/dev/null || true
+export DEBIAN_FRONTEND=noninteractive
 
 # Core packages
 CORE_PKGS=(
