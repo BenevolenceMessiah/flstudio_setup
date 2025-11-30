@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.7 (Mint Detection Fix Release)
+# Version: 2.1.8 (Mint Detection Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
 # Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
 
@@ -678,8 +678,12 @@ if [[ ! -f /etc/apt/keyrings/winehq.key ]]; then
 fi
 
 REPO_FILE="/etc/apt/sources.list.d/winehq.sources"
-if [[ ! -f "$REPO_FILE" ]]; then
-    log "Adding WineHQ repository for Ubuntu base: $UBUNTU_CODENAME"
+# Check if file exists with correct codename, otherwise recreate it
+if [[ ! -f "$REPO_FILE" ]] || ! grep -q "Suites: $UBUNTU_CODENAME" "$REPO_FILE"; then
+    log "Adding/Updating WineHQ repository for Ubuntu base: $UBUNTU_CODENAME"
+    
+    # Remove old file if it exists with wrong codename
+    [[ -f "$REPO_FILE" ]] && sudo rm -f "$REPO_FILE"
     
     # Write file with strict formatting (NO trailing spaces)
     sudo tee "$REPO_FILE" > /dev/null <<EOF
@@ -691,14 +695,14 @@ Architectures: amd64 i386
 Signed-By: /etc/apt/keyrings/winehq.key
 EOF
     
-    # Verify file was written correctly (check for exact string without trailing space)
+    # Verify file was written correctly
     if ! grep -q "URIs: https://dl.winehq.org/wine-builds/ubuntu/\$" "$REPO_FILE"; then
-        die "Failed to write WineHQ sources file correctly. Check for trailing spaces."
+        die "Failed to write WineHQ sources file correctly."
     fi
     
     sudo apt update
 else
-    debug "WineHQ repository already exists"
+    debug "WineHQ repository already exists with correct codename"
 fi
 
 # ============================================================================
