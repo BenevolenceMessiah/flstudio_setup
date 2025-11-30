@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.2 (Production Fix Release)
+# Version: 2.1.3 (Mint Detection Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
-# Repository: https://github.com/BenevolenceMessiah/flstudio_setup
+# Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
 
 # ============================================================================
 # 0 – CRITICAL: Initialize all variables to prevent unbound variable errors
@@ -209,7 +209,7 @@ install_packages() {
 }
 
 check_internet() {
-    if ! curl -fsSL --max-time 10 https://www.image-line.com >/dev/null 2>&1; then
+    if ! curl -fsSL --max-time 10 https://www.image-line.com  >/dev/null 2>&1; then
         warn "Cannot reach Image-Line website. Please check internet connection."
         return 1
     fi
@@ -279,13 +279,15 @@ detect_mint_ubuntu_base() {
         fi
     fi
     
-    echo "$ubuntu_base"
+    # Strip any ANSI codes or whitespace that might have leaked in
+    local result=$(echo "$ubuntu_base" | tr -d '[:space:]')
+    echo "$result"
 }
 
 wait_for_wine_prefix() {
     local prefix=$1 timeout=${2:-60}
     debug "Waiting up to ${timeout}s for Wine prefix..."
-    for i in $(seq 1 "$timeout"); do
+    for ((i=0; i<timeout; i++)); do
         [[ -f "$prefix/system.reg" ]] && debug "✓ Wine prefix ready" && return 0
         sleep 1
     done
@@ -319,7 +321,7 @@ show_help() {
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                   FL Studio Linux Setup - Professional Edition            ║
-║                 Version 2.1.1 | Ubuntu 22.04+ & Linux Mint 20.x+          ║
+║                 Version 2.1.3 | Ubuntu 22.04+ & Linux Mint 20.x+          ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 USAGE:
@@ -371,7 +373,7 @@ ENVIRONMENT VARIABLES:
     Installation Control:
         INSTALLER_PATH          Override installer source path/URL
         WINE_BRANCH             Override Wine branch (stable/staging)
-        OLLAMA_MODEL            Override Ollama model (default: hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL)
+        OLLAMA_MODEL            Override Ollama model
         PREFIX                  Override Wine prefix location
         MANUAL_REG_KEY          Path to manual registry key file
 
@@ -418,7 +420,7 @@ EXAMPLES:
     ./flstudio_setup.sh --reg ~/Downloads/FLRegkey.reg
 
     # Install from URL with command launcher
-    ./flstudio_setup.sh --installer https://example.com/flstudio.exe --path
+    ./flstudio_setup.sh --installer https://example.com/flstudio.exe  --path
 
     # Update existing installation
     ./flstudio_setup.sh --update
@@ -442,7 +444,7 @@ IMPORTANT NOTES:
     • Run with --verbose for detailed debugging
     • Linux Mint users: Your distribution will be automatically detected
 
-BUG REPORTS: https://github.com/BenevolenceMessiah/flstudio_setup/issues
+BUG REPORTS: https://github.com/BenevolenceMessiah/flstudio_setup/issues 
 EOF
     exit 0
 }
@@ -464,7 +466,7 @@ CURL_TIMEOUT=${CURL_TIMEOUT:-600}
 TIMEOUT_ARG=$([[ $NO_TIMEOUT == 1 ]] && echo "0" || echo "$WINE_TIMEOUT")
 
 FL_STUDIO_LATEST_VERSION="25.2.0.5125"
-# FIXED: Removed extra spaces in URL construction
+# FIXED: Removed extra space in URL construction
 INSTALLER_PATH=${INSTALLER_PATH:-"https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe"}
 WINE_BRANCH=${WINE_BRANCH:-"staging"}
 PREFIX=${PREFIX:-"$HOME/.wine-flstudio"}
@@ -500,7 +502,7 @@ if [[ $DO_UNINSTALL == 1 || $DO_UNINSTALL_FULL == 1 ]]; then
     log "Removing MCP stack..."
     if command -v curl &>/dev/null; then
         MCP_USE_VENV=0 curl -fsSL \
-            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh | \
+            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh  | \
             bash -- --uninstall 2>/dev/null || true
     fi
     
@@ -621,17 +623,17 @@ log "Features: MINIMAL=$MINIMAL_MODE, KXSTUDIO=$USE_KXSTUDIO, NO_TIMEOUT=$NO_TIM
 UBUNTU_CODENAME=$(detect_mint_ubuntu_base)
 log "Detected Ubuntu base codename: $UBUNTU_CODENAME"
 
-# Validate detected codename
+# CRITICAL: Validate codename to prevent ANSI code injection
+if [[ -z "$UBUNTU_CODENAME" ]]; then
+    die "Failed to detect Ubuntu base codename. Please check your distribution."
+fi
+
 case "$UBUNTU_CODENAME" in
     noble|jammy|focal)
         log "✓ Supported Ubuntu base detected: $UBUNTU_CODENAME"
         ;;
-    "")
-        die "Could not detect Ubuntu base codename. Please check your distribution."
-        ;;
     *)
-        warn "Untested Ubuntu base: $UBUNTU_CODENAME"
-        warn "This may work but has not been verified"
+        die "Invalid or untested Ubuntu base: '$UBUNTU_CODENAME'. Please verify your distribution is supported."
         ;;
 esac
 
@@ -668,20 +670,28 @@ fi
 if [[ ! -f /etc/apt/keyrings/winehq.key ]]; then
     log "Adding WineHQ key..."
     sudo mkdir -p /etc/apt/keyrings
-    wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo tee /etc/apt/keyrings/winehq.key >/dev/null
+    wget -qO- https://dl.winehq.org/wine-builds/winehq.key  | sudo tee /etc/apt/keyrings/winehq.key >/dev/null
 fi
 
 REPO_FILE="/etc/apt/sources.list.d/winehq.sources"
 if [[ ! -f "$REPO_FILE" ]]; then
     log "Adding WineHQ repository for Ubuntu base: $UBUNTU_CODENAME"
-    cat <<EOF | sudo tee "$REPO_FILE" >/dev/null
+    
+    # Write file with strict formatting (NO trailing spaces)
+    sudo tee "$REPO_FILE" > /dev/null <<EOF
 Types: deb
-URIs: https://dl.winehq.org/wine-builds/ubuntu
+URIs: https://dl.winehq.org/wine-builds/ubuntu/
 Suites: $UBUNTU_CODENAME
 Components: main
 Architectures: amd64 i386
 Signed-By: /etc/apt/keyrings/winehq.key
 EOF
+    
+    # Verify file was written correctly (check for exact string without trailing space)
+    if ! grep -q "URIs: https://dl.winehq.org/wine-builds/ubuntu/\$" "$REPO_FILE"; then
+        die "Failed to write WineHQ sources file correctly. Check for trailing spaces."
+    fi
+    
     sudo apt update
 else
     debug "WineHQ repository already exists"
@@ -756,7 +766,7 @@ if [[ $USE_KXSTUDIO == 1 ]]; then
     
     if [[ ! -f /etc/apt/sources.list.d/kxstudio-debian.list ]]; then
         log "Adding KXStudio repository..."
-        wget -q https://launchpad.net/~kxstudio-debian/+archive/kxstudio/+files/kxstudio-repos_10.0.3_all.deb -O /tmp/kxstudio-repos.deb
+        wget -q https://launchpad.net/~kxstudio-debian/+archive/kxstudio/+files/kxstudio-repos_10.0.3_all.deb  -O /tmp/kxstudio-repos.deb
         sudo dpkg -i /tmp/kxstudio-repos.deb || true
         sudo apt update
     fi
@@ -784,9 +794,9 @@ if [[ $USE_KXSTUDIO == 0 ]]; then
         
         # Clone repository
         log "Cloning WineASIO repository..."
-        if ! git clone --depth 1 --branch "$WINEASIO_VERSION" https://github.com/wineasio/wineasio.git .; then
+        if ! git clone --depth 1 --branch "$WINEASIO_VERSION" https://github.com/wineasio/wineasio.git  .; then
             warn "Tag $WINEASIO_VERSION not found, trying master..."
-            git clone --depth 1 https://github.com/wineasio/wineasio.git . || die "Failed to clone repository"
+            git clone --depth 1 https://github.com/wineasio/wineasio.git  . || die "Failed to clone repository"
         fi
         
         # Verify files
@@ -1009,7 +1019,7 @@ if [[ $NO_TIMEOUT == 1 ]]; then
 else
     max_iterations=1440  # 240 minutes max
     log "Please complete installation wizard (timeout: 240 minutes)..."
-    for i in $(seq 1 $max_iterations); do
+    for ((i=1; i<=max_iterations; i++)); do
         kill -0 "$INSTALLER_PID" 2>/dev/null || break
         
         if [[ $INSTALLATION_DETECTED == 0 ]]; then
@@ -1031,7 +1041,7 @@ fi
 # Wait for background processes
 log "Installer closed. Waiting for background Wine processes to complete..."
 POST_INSTALL_WAIT=300
-for i in $(seq 1 $POST_INSTALL_WAIT); do
+for ((i=1; i<=POST_INSTALL_WAIT; i++)); do
     if pgrep -f "WINEPREFIX=$PREFIX" >/dev/null 2>&1 || pgrep -f "$PREFIX" >/dev/null 2>&1; then
         [[ $((i % 30)) == 0 ]] && debug "Background processes still running... $i/$POST_INSTALL_WAIT seconds"
     else
@@ -1290,7 +1300,7 @@ if [[ $ENABLE_YABRIDGE == 1 ]]; then
     if command_exists yabridgectl && [[ $FORCE_REINSTALL == 0 ]]; then
         log "Yabridge already installed"
     else
-        YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest)
+        YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest )
         YABRIDGE_URL=$(echo "$YABRIDGE_INFO" | jq -r '.assets[] | select(.name | test("tar\\.gz$")) | .browser_download_url' | head -1)
         
         if [[ -z "$YABRIDGE_URL" || "$YABRIDGE_URL" == "null" ]]; then
@@ -1364,7 +1374,7 @@ fi
 if [[ $ENABLE_MCP == 1 ]]; then
     log "=== STEP 12: Installing MCP stack ==="
     
-    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh"
+    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh "
     TMP_MCP_SCRIPT=$(mktemp)
     
     if curl -fsSL "$MCP_INSTALL_URL" -o "$TMP_MCP_SCRIPT"; then
@@ -1385,7 +1395,7 @@ if [[ $ENABLE_N8N == 1 ]]; then
     log "=== STEP 13: Installing n8n ==="
     
     if ! command -v n8n &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_18.x  | sudo -E bash -
         sudo apt install -y nodejs
     fi
     
@@ -1401,7 +1411,7 @@ if [[ $ENABLE_OLLAMA == 1 ]]; then
     log "=== STEP 14: Setting up Ollama ==="
     
     if ! command -v ollama &>/dev/null; then
-        curl -fsSL https://ollama.com/install.sh | sh
+        curl -fsSL https://ollama.com/install.sh  | sh
     fi
     
     if [[ "$OLLAMA_MODEL" != "hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL" ]]; then
@@ -1771,4 +1781,3 @@ log "🎉 Enjoy making music with FL Studio on Linux!"
 log "════════════════════════════════════════════════════════════════"
 
 exit 0
-
