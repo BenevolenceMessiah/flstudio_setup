@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.0 (Linux Mint Compatibility Release)
+# Version: 2.1.1 (Production Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
-# Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
+# Repository: https://github.com/BenevolenceMessiah/flstudio_setup
 
 # ============================================================================
 # 0 – CRITICAL: Initialize all variables to prevent unbound variable errors
@@ -209,7 +209,7 @@ install_packages() {
 }
 
 check_internet() {
-    if ! curl -fsSL --max-time 10 https://www.image-line.com  >/dev/null 2>&1; then
+    if ! curl -fsSL --max-time 10 https://www.image-line.com >/dev/null 2>&1; then
         warn "Cannot reach Image-Line website. Please check internet connection."
         return 1
     fi
@@ -319,7 +319,7 @@ show_help() {
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════════════════╗
 ║                   FL Studio Linux Setup - Professional Edition            ║
-║                 Version 2.1.0 | Ubuntu 22.04+ & Linux Mint 20.x+          ║
+║                 Version 2.1.1 | Ubuntu 22.04+ & Linux Mint 20.x+          ║
 ╚═══════════════════════════════════════════════════════════════════════════╝
 
 USAGE:
@@ -418,7 +418,7 @@ EXAMPLES:
     ./flstudio_setup.sh --reg ~/Downloads/FLRegkey.reg
 
     # Install from URL with command launcher
-    ./flstudio_setup.sh --installer https://example.com/flstudio.exe  --path
+    ./flstudio_setup.sh --installer https://example.com/flstudio.exe --path
 
     # Update existing installation
     ./flstudio_setup.sh --update
@@ -442,7 +442,7 @@ IMPORTANT NOTES:
     • Run with --verbose for detailed debugging
     • Linux Mint users: Your distribution will be automatically detected
 
-BUG REPORTS: https://github.com/BenevolenceMessiah/flstudio_setup/issues  
+BUG REPORTS: https://github.com/BenevolenceMessiah/flstudio_setup/issues
 EOF
     exit 0
 }
@@ -464,7 +464,8 @@ CURL_TIMEOUT=${CURL_TIMEOUT:-600}
 TIMEOUT_ARG=$([[ $NO_TIMEOUT == 1 ]] && echo "0" || echo "$WINE_TIMEOUT")
 
 FL_STUDIO_LATEST_VERSION="25.2.0.5125"
-INSTALLER_PATH=${INSTALLER_PATH:-"https://install.image-line.com/flstudio/flstudio_win64_ ${FL_STUDIO_LATEST_VERSION}.exe"}
+# FIXED: Removed extra spaces in URL construction
+INSTALLER_PATH=${INSTALLER_PATH:-"https://install.image-line.com/flstudio/flstudio_win64_${FL_STUDIO_LATEST_VERSION}.exe"}
 WINE_BRANCH=${WINE_BRANCH:-"staging"}
 PREFIX=${PREFIX:-"$HOME/.wine-flstudio"}
 OLLAMA_MODEL=${OLLAMA_MODEL:-"hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL"}
@@ -499,7 +500,7 @@ if [[ $DO_UNINSTALL == 1 || $DO_UNINSTALL_FULL == 1 ]]; then
     log "Removing MCP stack..."
     if command -v curl &>/dev/null; then
         MCP_USE_VENV=0 curl -fsSL \
-            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh  | \
+            https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh | \
             bash -- --uninstall 2>/dev/null || true
     fi
     
@@ -645,19 +646,8 @@ done
 # Check internet
 check_internet
 
-# Get Wine info
-get_wine_info
-[[ "$WINE_VERSION" == *"not found"* ]] && die "Wine not found! Install Wine first"
-
-# Version check
-check_for_updates
-
-# Check Ubuntu version
-UBUNTU_VER=$(get_ubuntu_version)
-if (( $(echo "$UBUNTU_VER >= 24.04" | bc -l) )); then
-    warn "Ubuntu $UBUNTU_VER detected - PipeWire may cause WineASIO issues"
-    warn "Recommended: sudo apt install jackd2 && use JACK instead of PipeWire"
-fi
+# FIXED: Removed premature Wine check that prevented automatic installation
+# Wine will be installed in STEP 1 and 2 below
 
 # Update and upgrade system packages before installation
 log "=== UPDATING SYSTEM PACKAGES ==="
@@ -678,7 +668,7 @@ fi
 if [[ ! -f /etc/apt/keyrings/winehq.key ]]; then
     log "Adding WineHQ key..."
     sudo mkdir -p /etc/apt/keyrings
-    wget -qO- https://dl.winehq.org/wine-builds/winehq.key  | sudo tee /etc/apt/keyrings/winehq.key >/dev/null
+    wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo tee /etc/apt/keyrings/winehq.key >/dev/null
 fi
 
 REPO_FILE="/etc/apt/sources.list.d/winehq.sources"
@@ -686,7 +676,7 @@ if [[ ! -f "$REPO_FILE" ]]; then
     log "Adding WineHQ repository for Ubuntu base: $UBUNTU_CODENAME"
     cat <<EOF | sudo tee "$REPO_FILE" >/dev/null
 Types: deb
-URIs: https://dl.winehq.org/wine-builds/ubuntu 
+URIs: https://dl.winehq.org/wine-builds/ubuntu
 Suites: $UBUNTU_CODENAME
 Components: main
 Architectures: amd64 i386
@@ -709,7 +699,21 @@ if ! dpkg -l | grep -q "winehq-$WINE_BRANCH"; then
     sudo apt install -y --install-recommends "winehq-$WINE_BRANCH" winetricks
 fi
 
-get_wine_info  # Refresh after install
+# Refresh Wine info after installation
+get_wine_info
+
+# Check Wine is now available
+[[ "$WINE_VERSION" == *"not found"* ]] && die "Wine installation failed! Please install Wine manually."
+
+# Perform version check now that Wine is available
+check_for_updates
+
+# Check Ubuntu version
+UBUNTU_VER=$(get_ubuntu_version)
+if (( $(echo "$UBUNTU_VER >= 24.04" | bc -l) )); then
+    warn "Ubuntu $UBUNTU_VER detected - PipeWire may cause WineASIO issues"
+    warn "Recommended: sudo apt install jackd2 && use JACK instead of PipeWire"
+fi
 
 # Core packages
 CORE_PKGS=(
@@ -752,7 +756,7 @@ if [[ $USE_KXSTUDIO == 1 ]]; then
     
     if [[ ! -f /etc/apt/sources.list.d/kxstudio-debian.list ]]; then
         log "Adding KXStudio repository..."
-        wget -q https://launchpad.net/~kxstudio-debian/+archive/kxstudio/+files/kxstudio-repos_10.0.3_all.deb  -O /tmp/kxstudio-repos.deb
+        wget -q https://launchpad.net/~kxstudio-debian/+archive/kxstudio/+files/kxstudio-repos_10.0.3_all.deb -O /tmp/kxstudio-repos.deb
         sudo dpkg -i /tmp/kxstudio-repos.deb || true
         sudo apt update
     fi
@@ -780,9 +784,9 @@ if [[ $USE_KXSTUDIO == 0 ]]; then
         
         # Clone repository
         log "Cloning WineASIO repository..."
-        if ! git clone --depth 1 --branch "$WINEASIO_VERSION" https://github.com/wineasio/wineasio.git  .; then
+        if ! git clone --depth 1 --branch "$WINEASIO_VERSION" https://github.com/wineasio/wineasio.git .; then
             warn "Tag $WINEASIO_VERSION not found, trying master..."
-            git clone --depth 1 https://github.com/wineasio/wineasio.git  . || die "Failed to clone repository"
+            git clone --depth 1 https://github.com/wineasio/wineasio.git . || die "Failed to clone repository"
         fi
         
         # Verify files
@@ -1285,7 +1289,7 @@ if [[ $ENABLE_YABRIDGE == 1 ]]; then
     if command_exists yabridgectl && [[ $FORCE_REINSTALL == 0 ]]; then
         log "Yabridge already installed"
     else
-        YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest )
+        YABRIDGE_INFO=$(curl -s https://api.github.com/repos/robbert-vdh/yabridge/releases/latest)
         YABRIDGE_URL=$(echo "$YABRIDGE_INFO" | jq -r '.assets[] | select(.name | test("tar\\.gz$")) | .browser_download_url' | head -1)
         
         if [[ -z "$YABRIDGE_URL" || "$YABRIDGE_URL" == "null" ]]; then
@@ -1359,7 +1363,7 @@ fi
 if [[ $ENABLE_MCP == 1 ]]; then
     log "=== STEP 12: Installing MCP stack ==="
     
-    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh "
+    MCP_INSTALL_URL="https://raw.githubusercontent.com/BenevolenceMessiah/flstudio-mcp/main/flstudio-mcp-install.sh"
     TMP_MCP_SCRIPT=$(mktemp)
     
     if curl -fsSL "$MCP_INSTALL_URL" -o "$TMP_MCP_SCRIPT"; then
@@ -1380,7 +1384,7 @@ if [[ $ENABLE_N8N == 1 ]]; then
     log "=== STEP 13: Installing n8n ==="
     
     if ! command -v n8n &>/dev/null; then
-        curl -fsSL https://deb.nodesource.com/setup_18.x  | sudo -E bash -
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
         sudo apt install -y nodejs
     fi
     
@@ -1396,7 +1400,7 @@ if [[ $ENABLE_OLLAMA == 1 ]]; then
     log "=== STEP 14: Setting up Ollama ==="
     
     if ! command -v ollama &>/dev/null; then
-        curl -fsSL https://ollama.com/install.sh  | sh
+        curl -fsSL https://ollama.com/install.sh | sh
     fi
     
     if [[ "$OLLAMA_MODEL" != "hf.co/unsloth/Qwen3-30B-A3B-Thinking-2507-GGUF:Q8_K_XL" ]]; then
@@ -1730,7 +1734,7 @@ log "3. Select 'WINEASIO' as the device"
 log "4. Set Sample Rate: $AUDIO_SAMPLE_RATE Hz"
 log "5. Set Buffer Size: $AUDIO_BUFFER_SIZE samples"
 log "6. If WineASIO doesn't appear, restart FL Studio or run:"
-log "   WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\ineasio.dll"
+log "   WINEPREFIX=\"$PREFIX\" wine regsvr32 C:\\windows\\system32\\wineasio.dll"
 log ""
 
 log "🌐 LICENSING & ACTIVATION:"
