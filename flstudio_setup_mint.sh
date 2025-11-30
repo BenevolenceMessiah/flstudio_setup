@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.4 (Mint Detection Fix Release)
+# Version: 2.1.7 (Mint Detection Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
 # Repository: https://github.com/BenevolenceMessiah/flstudio_setup 
 
@@ -244,7 +244,7 @@ detect_mint_ubuntu_base() {
     
     # Map Mint codenames to Ubuntu base versions
     case "$mint_codename" in
-        wilma|xara|xia)
+        wilma|xara|xia|zara)
             ubuntu_base="noble"  # Mint 22.x based on Ubuntu 24.04
             ;;
         virginia|victoria|vera|vanessa)
@@ -623,7 +623,7 @@ if [[ -f /etc/linuxmint/info ]]; then
     log "Detected Linux Mint: $mint_codename"
     
     case "$mint_codename" in
-        wilma|xara|xia)
+        wilma|xara|xia|zara)
             log "Mapping to Ubuntu 24.04 LTS (Noble)"
             ;;
         virginia|victoria|vera|vanessa)
@@ -1785,3 +1785,4 @@ log "🎉 Enjoy making music with FL Studio on Linux!"
 log "════════════════════════════════════════════════════════════════"
 
 exit 0
+
