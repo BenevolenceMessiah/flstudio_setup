@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # flstudio_setup.sh – Production-ready FL Studio + WineASIO setup for Ubuntu & Linux Mint
-# Version: 2.1.1 (Production Fix Release)
+# Version: 2.1.2 (Production Fix Release)
 # Tested on: Ubuntu 22.04 LTS, 24.04 LTS, Linux Mint 20.x/21.x/22.x with Wine 10.x, FL Studio 21-25
 # Repository: https://github.com/BenevolenceMessiah/flstudio_setup
 
@@ -882,6 +882,7 @@ log "=== STEP 5: Installing Windows runtime libraries ==="
 if [[ ! -f ~/.cache/winetricks/lastupdate ]] || [[ $(find ~/.cache/winetricks/lastupdate -mtime +7 2>/dev/null) ]]; then
     log "Updating winetricks..."
     sudo winetricks --self-update 2>/dev/null || warn "Could not update winetricks"
+    mkdir -p ~/.cache/winetricks
     touch ~/.cache/winetricks/lastupdate
 fi
 
@@ -1770,3 +1771,4 @@ log "🎉 Enjoy making music with FL Studio on Linux!"
 log "════════════════════════════════════════════════════════════════"
 
 exit 0
+
